@@ -1,6 +1,5 @@
 sha := $(shell git rev-parse --short=7 HEAD)
 long_sha := $(shell git rev-parse HEAD)
-merge_sha := $(shell git merge-base HEAD^ origin/main)
 release_version := `cat VERSION`
 build_date ?= $(shell git show -s --date=iso8601-strict --pretty=format:%cd $$sha)
 branch = $(shell git branch | grep \* | cut -f2 -d' ')
@@ -23,15 +22,12 @@ PROXY_NETWORK ?= api_default
 # Codecov CLI version to use
 CODECOV_CLI_VERSION := 0.5.1
 
-update:
-    echo "updating api"
-    cd codecov-api && git pull
-    echo "updating worker"
-    cd worker && git pull
-    cd shared && git pull
-    cat worker/requirements.in codecov-api/requirements.in | sort -u > requirements.in
-    pip-compile requirements.in
-
+update-reqs:
+	cd codecov-api && git pull
+	cd worker && git pull
+	cd shared && git pull
+	cat worker/requirements.in codecov-api/requirements.in | sort -u > requirements.in
+	pip-compile requirements.in
 
 build:
 	make build.requirements
@@ -91,7 +87,7 @@ build.app:
 		--label "org.label-schema.vendor"="Codecov" \
 		--label "org.label-schema.version"="${release_version}-${sha}" \
 		--label "org.opencontainers.image.revision"="$(long_sha)" \
-		--label "org.opencontainers.image.source"="github.com/codecov/codecov-api" \
+		--label "org.opencontainers.image.source"="github.com/codecov/umbrella" \
 		--build-arg REQUIREMENTS_IMAGE=${AR_REPO}:${REQUIREMENTS_TAG} \
 		--build-arg RELEASE_VERSION=${VERSION} \
 		--build-arg BUILD_ENV=cloud
@@ -247,8 +243,8 @@ test_env.ats:
 test_env.container_static_analysis:
 	codecovcli -u ${CODECOV_URL} static-analysis --token=${CODECOV_STATIC_TOKEN}
 
-test_env.container_label_analysis:
-	codecovcli -u ${CODECOV_URL} label-analysis --base-sha=${merge_sha} --token=${CODECOV_STATIC_TOKEN}
+#test_env.container_label_analysis:
+#	codecovcli -u ${CODECOV_URL} label-analysis --base-sha=${merge_sha} --token=${CODECOV_STATIC_TOKEN}
 
 test_env.container_ats:
 	codecovcli -u ${CODECOV_URL} --codecov-yml-path=codecov_cli.yml upload-process --plugin pycoverage --plugin compress-pycoverage --flag smart-labels --fail-on-error
