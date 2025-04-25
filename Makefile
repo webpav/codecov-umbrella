@@ -34,8 +34,8 @@ define api_rule_prefix
 .PHONY: $(1)
 $(1): export APP_DIR := apps/codecov-api
 $(1): export REQUIREMENTS_TAG := ${API_REQS_TAG}
-$(1): export AR_REPO ?= codecov/api-umbrella
-$(1): export DOCKERHUB_REPO ?= codecov/self-hosted-api-umbrella
+$(1): export AR_REPO ?= codecov/api
+$(1): export DOCKERHUB_REPO ?= codecov/self-hosted-api
 $(1): export CI_REQS_REPO ?= codecov/api-ci-requirements
 endef
 
@@ -67,8 +67,8 @@ define worker_rule_prefix
 .PHONY: $(1)
 $(1): export APP_DIR := apps/worker
 $(1): export REQUIREMENTS_TAG := ${WORKER_REQS_TAG}
-$(1): export AR_REPO ?= codecov/worker-umbrella
-$(1): export DOCKERHUB_REPO ?= codecov/self-hosted-worker-umbrella
+$(1): export AR_REPO ?= codecov/worker
+$(1): export DOCKERHUB_REPO ?= codecov/self-hosted-worker
 $(1): export CI_REQS_REPO ?= codecov/worker-ci-requirements
 endef
 
