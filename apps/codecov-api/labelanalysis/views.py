@@ -1,12 +1,12 @@
 from rest_framework.exceptions import NotFound
 from rest_framework.generics import CreateAPIView, RetrieveAPIView, UpdateAPIView
-from shared.celery_config import label_analysis_task_name
 
 from codecov_auth.authentication.repo_auth import RepositoryTokenAuthentication
 from codecov_auth.permissions import SpecificScopePermission
 from labelanalysis.models import LabelAnalysisRequest, LabelAnalysisRequestState
 from labelanalysis.serializers import LabelAnalysisRequestSerializer
 from services.task import TaskService
+from shared.celery_config import label_analysis_task_name
 
 
 class LabelAnalysisRequestCreateView(CreateAPIView):
@@ -20,8 +20,8 @@ class LabelAnalysisRequestCreateView(CreateAPIView):
         instance = serializer.save(state_id=LabelAnalysisRequestState.CREATED.db_id)
         TaskService().schedule_task(
             label_analysis_task_name,
-            kwargs=dict(request_id=instance.id),
-            apply_async_kwargs=dict(),
+            kwargs={"request_id": instance.id},
+            apply_async_kwargs={},
         )
         return instance
 
@@ -45,8 +45,8 @@ class LabelAnalysisRequestDetailView(RetrieveAPIView, UpdateAPIView):
             larq = LabelAnalysisRequest.objects.get(external_id=uid)
             TaskService().schedule_task(
                 label_analysis_task_name,
-                kwargs=dict(request_id=larq.id),
-                apply_async_kwargs=dict(),
+                kwargs={"request_id": larq.id},
+                apply_async_kwargs={},
             )
         return response
 

@@ -2,9 +2,6 @@ import json
 
 import pytest
 from mock import MagicMock, patch
-from shared.reports.reportfile import ReportFile
-from shared.reports.resources import Report
-from shared.reports.types import CoverageDatapoint, LineSession, ReportLine
 
 from database.models.labelanalysis import LabelAnalysisRequest
 from database.tests.factories import RepositoryFactory
@@ -18,6 +15,9 @@ from database.tests.factories.staticanalysis import (
 from helpers.labels import SpecialLabelsEnum
 from services.report import ReportService
 from services.static_analysis import StaticAnalysisComparisonService
+from shared.reports.reportfile import ReportFile
+from shared.reports.resources import Report
+from shared.reports.types import CoverageDatapoint, LineSession, ReportLine
 from tasks.label_analysis import (
     ExistingLabelSetsNotEncoded,
     LabelAnalysisRequestProcessingTask,
@@ -701,7 +701,7 @@ def test_get_executable_lines_labels_all_labels_in_one_file(sample_report_with_l
 def test_get_executable_lines_labels_some_labels_in_one_file(sample_report_with_labels):
     executable_lines = {
         "all": False,
-        "files": {"source.py": {"all": False, "lines": set([5, 6])}},
+        "files": {"source.py": {"all": False, "lines": {5, 6}}},
     }
     task = LabelAnalysisRequestProcessingTask()
     assert task.get_executable_lines_labels(
@@ -717,7 +717,7 @@ def test_get_executable_lines_labels_some_labels_in_one_file_with_globals(
 ):
     executable_lines = {
         "all": False,
-        "files": {"source.py": {"all": False, "lines": set([6, 8])}},
+        "files": {"source.py": {"all": False, "lines": {6, 8}}},
     }
     task = LabelAnalysisRequestProcessingTask()
     assert task.get_executable_lines_labels(
@@ -734,7 +734,7 @@ def test_get_executable_lines_labels_some_labels_in_one_file_other_null(
     executable_lines = {
         "all": False,
         "files": {
-            "source.py": {"all": False, "lines": set([5, 6])},
+            "source.py": {"all": False, "lines": {5, 6}},
             "path/from/randomfile_no_static_analysis.html": None,
         },
     }

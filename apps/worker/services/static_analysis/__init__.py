@@ -3,8 +3,6 @@ import logging
 import typing
 
 import sentry_sdk
-from shared.api_archive.archive import ArchiveService
-from shared.storage.exceptions import FileNotInStorageError
 
 from database.models.staticanalysis import (
     StaticAnalysisSingleFileSnapshot,
@@ -16,6 +14,8 @@ from services.static_analysis.single_file_analyzer import (
     AntecessorFindingResult,
     SingleFileSnapshotAnalyzer,
 )
+from shared.api_archive.archive import ArchiveService
+from shared.storage.exceptions import FileNotInStorageError
 
 log = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ class StaticAnalysisComparisonService(object):
         except FileNotInStorageError:
             log.warning(
                 "Unable to load file for static analysis comparison",
-                extra=dict(filepath=filepath, content_location=content_location),
+                extra={"filepath": filepath, "content_location": content_location},
             )
             return None
 
@@ -135,11 +135,11 @@ class StaticAnalysisComparisonService(object):
             if head_analysis_file_data is None or base_analysis_file_data is None:
                 log.warning(
                     "Failed to load snapshot for file. Fallback to all lines in the file",
-                    extra=dict(
-                        file_path=change.after_filepath,
-                        is_missing_head=(head_analysis_file_data is None),
-                        is_missing_base=(base_analysis_file_data is None),
-                    ),
+                    extra={
+                        "file_path": change.after_filepath,
+                        "is_missing_head": (head_analysis_file_data is None),
+                        "is_missing_base": (base_analysis_file_data is None),
+                    },
                 )
                 return {"all": True, "lines": None}
 
@@ -149,14 +149,14 @@ class StaticAnalysisComparisonService(object):
                 )
                 if corresponding_exec_line is not None:
                     result_so_far["lines"].add(corresponding_exec_line)
-            affected_statement_lines = set(
+            affected_statement_lines = {
                 x
                 for x in (
                     head_analysis_file_data.get_corresponding_executable_line(li)
                     for li in change.lines_only_on_head
                 )
                 if x is not None
-            )
+            }
             for head_line in affected_statement_lines:
                 (
                     matching_type,
@@ -183,6 +183,6 @@ class StaticAnalysisComparisonService(object):
             return result_so_far
         log.warning(
             "Unknown type of change. Fallback to all lines",
-            extra=dict(change_type=change.change_type),
+            extra={"change_type": change.change_type},
         )
         return {"all": True, "lines": None}

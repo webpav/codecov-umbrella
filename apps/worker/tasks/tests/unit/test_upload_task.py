@@ -8,12 +8,6 @@ import pytest
 from celery.exceptions import Retry
 from mock import AsyncMock, call
 from redis.exceptions import LockError
-from shared.helpers.redis import get_redis_connection
-from shared.reports.enums import UploadState, UploadType
-from shared.torngit import GitlabEnterprise
-from shared.torngit.exceptions import TorngitClientError, TorngitRepoNotFoundError
-from shared.torngit.gitlab import Gitlab
-from shared.utils.sessions import SessionType
 
 from database.enums import ReportType
 from database.models import Upload
@@ -29,6 +23,12 @@ from helpers.checkpoint_logger.flows import TestResultsFlow, UploadFlow
 from helpers.exceptions import RepositoryWithoutValidBotError
 from helpers.log_context import LogContext, set_log_context
 from services.report import NotReadyToBuildReportYetError, ReportService
+from shared.helpers.redis import get_redis_connection
+from shared.reports.enums import UploadState, UploadType
+from shared.torngit import GitlabEnterprise
+from shared.torngit.exceptions import TorngitClientError, TorngitRepoNotFoundError
+from shared.torngit.gitlab import Gitlab
+from shared.utils.sessions import SessionType
 from tasks.bundle_analysis_notify import bundle_analysis_notify_task
 from tasks.bundle_analysis_processor import bundle_analysis_processor_task
 from tasks.test_results_finisher import test_results_finisher_task
@@ -191,11 +191,11 @@ class TestUploadTaskIntegration(object):
                 "upload_pk": first_session.id,
             },
         )
-        kwargs = dict(
-            repoid=commit.repoid,
-            commitid="abf6d4df662c47e32460020ab14abf9303581429",
-            commit_yaml={"codecov": {"max_report_age": "1y ago"}},
-        )
+        kwargs = {
+            "repoid": commit.repoid,
+            "commitid": "abf6d4df662c47e32460020ab14abf9303581429",
+            "commit_yaml": {"codecov": {"max_report_age": "1y ago"}},
+        }
         kwargs[_kwargs_key(UploadFlow)] = mocker.ANY
         finisher = upload_finisher_task.signature(kwargs=kwargs)
         mocked_chord.assert_called_with([processor], finisher)
@@ -424,13 +424,13 @@ class TestUploadTaskIntegration(object):
             ],
             impl_type="old",
         )
-        kwargs = dict(
-            repoid=commit.repoid,
-            commitid=commit.commitid,
-            commit_yaml={"codecov": {"max_report_age": "1y ago"}},
-            checkpoints_TestResultsFlow=None,
-            impl_type="old",
-        )
+        kwargs = {
+            "repoid": commit.repoid,
+            "commitid": commit.commitid,
+            "commit_yaml": {"codecov": {"max_report_age": "1y ago"}},
+            "checkpoints_TestResultsFlow": None,
+            "impl_type": "old",
+        }
 
         kwargs[_kwargs_key(TestResultsFlow)] = mocker.ANY
         notify_sig = test_results_finisher_task.signature(kwargs=kwargs)
@@ -534,13 +534,13 @@ class TestUploadTaskIntegration(object):
             ],
             impl_type="both",
         )
-        kwargs = dict(
-            repoid=commit.repoid,
-            commitid=commit.commitid,
-            commit_yaml={"codecov": {"max_report_age": "1y ago"}},
-            checkpoints_TestResultsFlow=None,
-            impl_type="both",
-        )
+        kwargs = {
+            "repoid": commit.repoid,
+            "commitid": commit.commitid,
+            "commit_yaml": {"codecov": {"max_report_age": "1y ago"}},
+            "checkpoints_TestResultsFlow": None,
+            "impl_type": "both",
+        }
 
         kwargs[_kwargs_key(TestResultsFlow)] = mocker.ANY
         notify_sig = test_results_finisher_task.signature(kwargs=kwargs)
@@ -797,11 +797,11 @@ class TestUploadTaskIntegration(object):
             for arguments in redis_queue
         ]
         processors.reverse()  # whatever the reason
-        kwargs = dict(
-            repoid=commit.repoid,
-            commitid="abf6d4df662c47e32460020ab14abf9303581429",
-            commit_yaml={"codecov": {"max_report_age": "1y ago"}},
-        )
+        kwargs = {
+            "repoid": commit.repoid,
+            "commitid": "abf6d4df662c47e32460020ab14abf9303581429",
+            "commit_yaml": {"codecov": {"max_report_age": "1y ago"}},
+        }
         kwargs[_kwargs_key(UploadFlow)] = mocker.ANY
         t_final = upload_finisher_task.signature(kwargs=kwargs)
         mocked_chord.assert_called_with(processors, t_final)
@@ -1038,7 +1038,7 @@ class TestUploadTaskIntegration(object):
             # Setting the time to _before_ patch centric default YAMLs start date of 2024-04-30
             repository__owner__createstamp=datetime(2023, 1, 1, tzinfo=timezone.utc),
         )
-        mock_repo_provider.data = dict(repo=dict(repoid=commit.repoid))
+        mock_repo_provider.data = {"repo": {"repoid": commit.repoid}}
         dbsession.add(commit)
         dbsession.flush()
         mock_redis.lists[f"uploads/{commit.repoid}/{commit.commitid}"] = (
@@ -1139,7 +1139,7 @@ class TestUploadTaskIntegration(object):
             state_id=UploadState.UPLOADED.db_id,
             upload_type_id=UploadType.UPLOADED.db_id,
         )
-        mock_repo_provider.data = dict(repo=dict(repoid=commit.repoid))
+        mock_repo_provider.data = {"repo": {"repoid": commit.repoid}}
         dbsession.add(commit)
         dbsession.add(report)
         dbsession.add(upload)

@@ -8,11 +8,6 @@ import vcr
 from celery.exceptions import SoftTimeLimitExceeded
 from freezegun import freeze_time
 from redis.exceptions import LockError
-from shared.celery_config import (
-    sync_repo_languages_gql_task_name,
-    sync_repo_languages_task_name,
-)
-from shared.torngit.exceptions import TorngitClientError, TorngitServer5xxCodeError
 
 from database.models import Owner, Repository
 from database.models.core import (
@@ -20,6 +15,11 @@ from database.models.core import (
     GithubAppInstallation,
 )
 from database.tests.factories import OwnerFactory, RepositoryFactory
+from shared.celery_config import (
+    sync_repo_languages_gql_task_name,
+    sync_repo_languages_task_name,
+)
+from shared.torngit.exceptions import TorngitClientError, TorngitServer5xxCodeError
 from tasks.sync_repo_languages_gql import SyncRepoLanguagesGQLTask
 from tasks.sync_repos import SyncReposTask
 from tests.helpers import mock_all_plans_and_tiers
@@ -693,19 +693,19 @@ class TestSyncReposTaskUnit(object):
         dbsession.flush()
 
         list_repos_result = [
-            dict(
-                owner=dict(
-                    service_id=repo.owner.service_id,
-                    username=repo.owner.username,
-                ),
-                repo=dict(
-                    service_id=repo.service_id,
-                    name=repo.name,
-                    language=repo.language,
-                    private=repo.private,
-                    branch=repo.branch or "master",
-                ),
-            )
+            {
+                "owner": {
+                    "service_id": repo.owner.service_id,
+                    "username": repo.owner.username,
+                },
+                "repo": {
+                    "service_id": repo.service_id,
+                    "name": repo.name,
+                    "language": repo.language,
+                    "private": repo.private,
+                    "branch": repo.branch or "master",
+                },
+            }
             for repo in repos
         ]
 
