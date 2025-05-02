@@ -95,6 +95,7 @@ ENV/
 env.bak/
 venv.bak/
 .testenv
+.envrc.private
 .debug
 .codspeed
 .ruff_cache
