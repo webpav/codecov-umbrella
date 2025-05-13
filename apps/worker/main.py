@@ -136,14 +136,19 @@ def _get_queues_param_from_queue_input(queues: list[str]) -> str:
 
     # Support passing comma separated values, as those will be split again:
     joined_queues = ",".join(queues)
-    enterprise_queues = ["enterprise_" + q for q in joined_queues.split(",")]
+    enterprise_queues = []
+    if get_config("setup", "enterprise_queues_enabled", default=True):
+        enterprise_queues = [
+            "enterprise_" + q if not q.startswith("enterprise_") else ""
+            for q in joined_queues.split(",")
+        ]
     all_queues = [
         joined_queues,
         *enterprise_queues,
         BaseCeleryConfig.health_check_default_queue,
     ]
 
-    return ",".join(all_queues)
+    return ",".join([q for q in all_queues if q])
 
 
 def main():
