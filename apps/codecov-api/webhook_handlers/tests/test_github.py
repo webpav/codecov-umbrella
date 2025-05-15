@@ -814,19 +814,10 @@ class GithubWebhookHandlerTests(APITestCase):
 
     def test_installation_with_deleted_action_nulls_values(self):
         # Should set integration_id to null for owner,
-        # and set using_integration=False and bot=null for repos
-        owner = OwnerFactory(service=Service.GITHUB.value)
-        repo1 = RepositoryFactory(author=owner)
-        repo2 = RepositoryFactory(author=owner)
-
-        owner.integration_id = 12
-        owner.save()
-
-        repo1.using_integration, repo2.using_integration = True, True
-        repo1.bot, repo2.bot = owner, owner
-
-        repo1.save()
-        repo2.save()
+        # and set using_integration=False and bot=null for repos -> deprecated
+        owner = OwnerFactory(service=Service.GITHUB.value, integration_id=12)
+        repo1 = RepositoryFactory(author=owner, using_integration=True, bot=owner)
+        repo2 = RepositoryFactory(author=owner, using_integration=True, bot=owner)
 
         ghapp_installation = GithubAppInstallation(
             installation_id=25,
@@ -879,8 +870,6 @@ class GithubWebhookHandlerTests(APITestCase):
         repos_affected: None,
     )
     def test_installation_repositories_update_existing_ghapp(self):
-        # Should set integration_id to null for owner,
-        # and set using_integration=False and bot=null for repos
         owner = OwnerFactory(service=Service.GITHUB.value)
         repo1 = RepositoryFactory(author=owner)
         repo2 = RepositoryFactory(author=owner)
@@ -932,11 +921,15 @@ class GithubWebhookHandlerTests(APITestCase):
 
     @patch(
         "services.task.TaskService.refresh",
-        lambda self, ownerid, username, sync_teams, sync_repos, using_integration: None,
+        lambda self,
+        ownerid,
+        username,
+        sync_teams,
+        sync_repos,
+        repos_affected,
+        using_integration: None,
     )
     def test_installation_repositories_update_existing_ghapp_all_repos(self):
-        # Should set integration_id to null for owner,
-        # and set using_integration=False and bot=null for repos
         owner = OwnerFactory(service=Service.GITHUB.value)
         repo1 = RepositoryFactory(author=owner)
         repo2 = RepositoryFactory(author=owner)
@@ -944,9 +937,6 @@ class GithubWebhookHandlerTests(APITestCase):
             owner=owner, repository_service_ids=[repo1.service_id], installation_id=12
         )
 
-        owner.save()
-        repo1.save()
-        repo2.save()
         installation.save()
 
         assert owner.github_app_installations.exists()
@@ -960,10 +950,12 @@ class GithubWebhookHandlerTests(APITestCase):
                     "account": {"id": owner.service_id, "login": owner.username},
                     "app_id": 15,
                 },
-                "repositories_added": [{"id": repo2.service_id}],
+                "repositories_added": [
+                    {"id": repo2.service_id, "node_id": "R_xCATxCAT"}
+                ],
                 "repositories_removed": [],
                 "repository_selection": "all",
-                "action": "deleted",
+                "action": "added",
                 "sender": {"type": "User"},
             },
         )
@@ -988,9 +980,6 @@ class GithubWebhookHandlerTests(APITestCase):
         installation_id = 44
         owner = OwnerFactory(service=Service.GITHUB.value)
 
-        owner.integration_id = None
-        owner.save()
-
         self._post_event_data(
             event=GitHubWebhookEvents.INSTALLATION,
             data={
@@ -1010,8 +999,7 @@ class GithubWebhookHandlerTests(APITestCase):
         )
 
         owner.refresh_from_db()
-
-        assert owner.integration_id == installation_id
+        assert owner.integration_id is None  # no longer set this during install
 
         ghapp_installations_set = GithubAppInstallation.objects.filter(
             owner_id=owner.ownerid
@@ -1034,14 +1022,11 @@ class GithubWebhookHandlerTests(APITestCase):
         using_integration,
         repos_affected: None,
     )
-    def test_installation_repositories_with_other_actions_sets_owner_itegration_id_if_none(
+    def test_installation_repositories_with_other_actions(
         self,
     ):
         installation_id = 44
-        owner = OwnerFactory(service=Service.GITHUB.value)
-
-        owner.integration_id = None
-        owner.save()
+        owner = OwnerFactory(service=Service.GITHUB.value, integration_id=None)
 
         self._post_event_data(
             event=GitHubWebhookEvents.INSTALLATION_REPOSITORIES,
@@ -1059,8 +1044,7 @@ class GithubWebhookHandlerTests(APITestCase):
         )
 
         owner.refresh_from_db()
-
-        assert owner.integration_id == installation_id
+        assert owner.integration_id is None  # no longer set this during install
 
         ghapp_installations_set = GithubAppInstallation.objects.filter(
             owner_id=owner.ownerid
