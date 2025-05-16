@@ -114,16 +114,6 @@ def update_daily_totals(
         daily_totals[test_id]["skip_count"] += 1
 
 
-def handle_parsing_error(db_session: Session, upload: Upload, exc: Exception):
-    upload_error = UploadError(
-        report_upload=upload,
-        error_code="unsupported_file_format",
-        error_params={"error_message": str(exc)},
-    )
-    db_session.add(upload_error)
-    db_session.commit()
-
-
 @dataclass
 class PytestName:
     actual_class_name: str
@@ -423,7 +413,13 @@ class TestResultsProcessorTask(BaseCodecovTask, name=test_results_processor_task
                 },
             )
             sentry_sdk.capture_exception(exc, tags={"upload_state": upload.state})
-            handle_parsing_error(db_session, upload, exc)
+            upload_error = UploadError(
+                report_upload=upload,
+                error_code="unsupported_file_format",
+                error_params={"error_message": str(exc)},
+            )
+            db_session.add(upload_error)
+            db_session.commit()
             return None
 
     def process_individual_upload(
@@ -446,7 +442,6 @@ class TestResultsProcessorTask(BaseCodecovTask, name=test_results_processor_task
 
         payload_bytes = archive_service.read_file(upload.storage_path)
         parsing_results: list[test_results_parser.ParsingInfo] = []
-        report_contents: list[ReadableFile] = []
 
         result = self.parse_file(db_session, payload_bytes, upload)
         if result is None:
@@ -456,13 +451,22 @@ class TestResultsProcessorTask(BaseCodecovTask, name=test_results_processor_task
 
         parsing_results, readable_files = result
 
-        if all(len(result["testruns"]) == 0 for result in parsing_results):
-            successful = False
-            log.error(
-                "No test result files were successfully parsed for this upload",
-                extra={"upload_id": upload_id},
-            )
-        else:
+        warnings = [
+            {
+                "upload_id": upload_id,
+                "error_code": "warning",
+                "error_params": {"warning_message": warning},
+            }
+            for info in parsing_results
+            for warning in info["warnings"]
+        ]
+
+        if warnings:
+            bulk_create_warnings = insert(UploadError.__table__).values(warnings)
+            db_session.execute(bulk_create_warnings)
+            db_session.commit()
+
+        if any(len(result["testruns"]) > 0 for result in parsing_results):
             successful = True
 
             with write_tests_summary.labels("old").time():
@@ -476,6 +480,8 @@ class TestResultsProcessorTask(BaseCodecovTask, name=test_results_processor_task
                     flaky_test_set,
                     upload.flag_names,
                 )
+        else:
+            successful = False
 
         upload.state = "processed"
         db_session.commit()
