@@ -17,7 +17,6 @@ from shared.helpers.cache import cache
 from shared.helpers.redis import get_redis_connection
 from shared.metrics import Counter
 from shared.rate_limits import set_entity_to_rate_limited
-from shared.rollouts.features import INCLUDE_GITHUB_COMMENT_ACTIONS_BY_OWNER
 from shared.torngit.base import TokenType, TorngitBaseAdapter
 from shared.torngit.enums import Endpoints
 from shared.torngit.exceptions import (
@@ -35,7 +34,7 @@ from shared.torngit.exceptions import (
 from shared.torngit.response_types import ProviderPull
 from shared.torngit.status import Status
 from shared.typings.oauth_token_types import OauthConsumerToken
-from shared.typings.torngit import GithubInstallationInfo, UploadType
+from shared.typings.torngit import GithubInstallationInfo
 from shared.utils.urls import url_concat
 
 log = logging.getLogger(__name__)
@@ -605,36 +604,6 @@ class Github(TorngitBaseAdapter):
     def count_and_get_url_template(cls, url_name):
         GITHUB_API_ENDPOINTS[url_name]["counter"].inc()
         return GITHUB_API_ENDPOINTS[url_name]["url_template"]
-
-    async def build_comment_request_body(
-        self, body: dict, issueid: int | None = None
-    ) -> dict:
-        body = {"body": body}
-        upload_type = self.data.get("additional_data", {}).get("upload_type")
-        if upload_type in [UploadType.BUNDLE_ANALYSIS, UploadType.TEST_RESULTS]:
-            return body
-        try:
-            ownerid = self.data["owner"].get("ownerid")
-            if (
-                issueid is not None
-                and await INCLUDE_GITHUB_COMMENT_ACTIONS_BY_OWNER.check_value_async(
-                    identifier=ownerid, default=False
-                )
-            ):
-                bot_name = get_config(
-                    "github", "comment_action_bot_name", default="sentry"
-                )
-                body["actions"] = [
-                    {
-                        "name": "Generate Unit Tests",
-                        "type": "copilot-chat",
-                        "prompt": f"@{bot_name} generate tests for this PR.",
-                    }
-                ]
-        except Exception:
-            pass
-
-        return body
 
     async def api(self, *args, token=None, **kwargs):
         """
@@ -1627,25 +1596,26 @@ class Github(TorngitBaseAdapter):
     # --------
     async def post_comment(self, issueid, body, token=None):
         token = self.get_token_by_type_if_none(token, TokenType.comment)
-        body = await self.build_comment_request_body(body, issueid)
         # https://developer.github.com/v3/issues/comments/#create-a-comment
         async with self.get_client() as client:
             url = self.count_and_get_url_template(url_name="post_comment").substitute(
                 slug=self.slug, issueid=issueid
             )
-            res = await self.api(client, "post", url, body=body, token=token)
+            res = await self.api(client, "post", url, body={"body": body}, token=token)
             return res
 
     async def edit_comment(self, issueid, commentid, body, token=None):
         token = self.get_token_by_type_if_none(token, TokenType.comment)
-        body = await self.build_comment_request_body(body, issueid)
         # https://developer.github.com/v3/issues/comments/#edit-a-comment
         try:
             async with self.get_client() as client:
                 url = self.count_and_get_url_template(
                     url_name="edit_comment"
                 ).substitute(slug=self.slug, commentid=commentid)
-                res = await self.api(client, "patch", url, body=body, token=token)
+                res = await self.api(
+                    client, "patch", url, body={"body": body}, token=token
+                )
+
                 return res
         except TorngitClientError as ce:
             if ce.code == 404:
