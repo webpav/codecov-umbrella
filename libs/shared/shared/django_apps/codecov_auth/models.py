@@ -1,8 +1,9 @@
 import binascii
+import json
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from hashlib import md5
 from typing import Optional, Self
 
@@ -402,6 +403,150 @@ class Owner(ExportModelOperationsMixin("codecov_auth.owner"), models.Model):
     def save(self, *args, **kwargs):
         self.updatestamp = timezone.now()
         super().save(*args, **kwargs)
+    
+    # OAuth token management methods
+    def _parse_oauth_token(self) -> dict:
+        """Parse oauth_token field to determine format and extract token data"""
+        if not self.oauth_token:
+            return {"type": "none", "data": None}
+        
+        # Try to parse as JSON (OAuth 2.0 format)
+        try:
+            token_data = json.loads(self.oauth_token)
+            if isinstance(token_data, dict) and "access_token" in token_data:
+                return {"type": "oauth2", "data": token_data}
+        except (json.JSONDecodeError, TypeError):
+            pass
+        
+        # Check for OAuth 1.0 format (key:secret)
+        if ":" in self.oauth_token and self.oauth_token.count(":") == 1:
+            key, secret = self.oauth_token.split(":", 1)
+            return {"type": "oauth1", "data": {"key": key, "secret": secret}}
+        
+        # Fallback for legacy formats
+        return {"type": "legacy", "data": self.oauth_token}
+    
+    def get_oauth_token_data(self) -> Optional[dict]:
+        """Get parsed OAuth token data"""
+        parsed = self._parse_oauth_token()
+        return parsed.get("data")
+    
+    def get_oauth_token_type(self) -> str:
+        """Get OAuth token type: 'oauth1', 'oauth2', 'legacy', or 'none'"""
+        parsed = self._parse_oauth_token()
+        return parsed.get("type", "none")
+    
+    def set_oauth2_token(self, access_token: str, refresh_token: Optional[str] = None, 
+                        expires_in: Optional[int] = None, scope: Optional[str] = None) -> None:
+        """Set OAuth 2.0 token data"""
+        token_data = {
+            "access_token": access_token,
+            "token_type": "Bearer",
+            "created_at": datetime.now().isoformat()
+        }
+        
+        if refresh_token:
+            token_data["refresh_token"] = refresh_token
+        
+        if expires_in:
+            token_data["expires_in"] = expires_in
+            token_data["expires_at"] = (datetime.now() + timedelta(seconds=expires_in)).isoformat()
+        
+        if scope:
+            token_data["scope"] = scope
+            
+        self.oauth_token = json.dumps(token_data)
+    
+    def set_oauth1_token(self, key: str, secret: str) -> None:
+        """Set OAuth 1.0 token data (legacy format)"""
+        self.oauth_token = f"{key}:{secret}"
+    
+    def is_oauth2_token_expired(self) -> bool:
+        """Check if OAuth 2.0 token is expired"""
+        token_data = self.get_oauth_token_data()
+        if not token_data or not isinstance(token_data, dict):
+            return True
+        
+        expires_at_str = token_data.get("expires_at")
+        if not expires_at_str:
+            return False  # No expiration set
+        
+        try:
+            expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+            return datetime.now() >= expires_at
+        except (ValueError, TypeError):
+            return True  # Invalid date format, consider expired
+    
+    def get_oauth2_access_token(self) -> Optional[str]:
+        """Get OAuth 2.0 access token if available and valid"""
+        if self.get_oauth_token_type() != "oauth2":
+            return None
+        
+        token_data = self.get_oauth_token_data()
+        if not token_data or self.is_oauth2_token_expired():
+            return None
+        
+        return token_data.get("access_token")
+    
+    def get_oauth2_refresh_token(self) -> Optional[str]:
+        """Get OAuth 2.0 refresh token if available"""
+        if self.get_oauth_token_type() != "oauth2":
+            return None
+        
+        token_data = self.get_oauth_token_data()
+        if not token_data:
+            return None
+        
+        return token_data.get("refresh_token")
+    
+    def get_oauth1_credentials(self) -> Optional[dict]:
+        """Get OAuth 1.0 credentials if available"""
+        if self.get_oauth_token_type() != "oauth1":
+            return None
+        
+        return self.get_oauth_token_data()
+    
+    def refresh_oauth2_token(self, new_access_token: str, new_refresh_token: Optional[str] = None,
+                           expires_in: Optional[int] = None) -> None:
+        """Update OAuth 2.0 token with refreshed values"""
+        token_data = self.get_oauth_token_data()
+        if not token_data or self.get_oauth_token_type() != "oauth2":
+            # Create new OAuth 2.0 token
+            self.set_oauth2_token(new_access_token, new_refresh_token, expires_in)
+            return
+        
+        # Update existing token
+        token_data["access_token"] = new_access_token
+        token_data["created_at"] = datetime.now().isoformat()
+        
+        if new_refresh_token:
+            token_data["refresh_token"] = new_refresh_token
+        
+        if expires_in:
+            token_data["expires_in"] = expires_in
+            token_data["expires_at"] = (datetime.now() + timedelta(seconds=expires_in)).isoformat()
+        
+        self.oauth_token = json.dumps(token_data)
+    
+    def needs_token_refresh(self) -> bool:
+        """Check if OAuth 2.0 token needs refresh (expires within 5 minutes)"""
+        if self.get_oauth_token_type() != "oauth2":
+            return False
+        
+        token_data = self.get_oauth_token_data()
+        if not token_data:
+            return False
+        
+        expires_at_str = token_data.get("expires_at")
+        if not expires_at_str:
+            return False
+        
+        try:
+            expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+            # Refresh if expires within 5 minutes
+            return datetime.now() >= (expires_at - timedelta(minutes=5))
+        except (ValueError, TypeError):
+            return True
 
     @property
     def has_yaml(self):

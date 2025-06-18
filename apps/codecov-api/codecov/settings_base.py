@@ -328,6 +328,35 @@ BITBUCKET_SERVER_TOKENLESS_BOT_KEY = get_config(
     "bitbucket_server", "bots", "tokenless", "key", default=BITBUCKET_SERVER_BOT_KEY
 )
 
+# OAuth 2.0 settings for Bitbucket Data Center
+BITBUCKET_SERVER_OAUTH2_ENABLED = get_config(
+    "bitbucket_server", "oauth2", "enabled", default=False
+)
+BITBUCKET_SERVER_OAUTH2_AUTHORIZE_URL = get_config(
+    "bitbucket_server", "oauth2", "authorize_url", 
+    default=f"{get_config('bitbucket_server', 'url', default='')}/rest/oauth2/latest/authorize"
+)
+BITBUCKET_SERVER_OAUTH2_TOKEN_URL = get_config(
+    "bitbucket_server", "oauth2", "token_url",
+    default=f"{get_config('bitbucket_server', 'url', default='')}/rest/oauth2/latest/token"
+)
+BITBUCKET_SERVER_OAUTH2_SCOPE = get_config(
+    "bitbucket_server", "oauth2", "scope", default=["PUBLIC_REPOS"]
+)
+BITBUCKET_SERVER_OAUTH2_USE_PKCE = get_config(
+    "bitbucket_server", "oauth2", "use_pkce", default=True
+)
+BITBUCKET_SERVER_OAUTH2_PKCE_CODE_CHALLENGE_METHOD = get_config(
+    "bitbucket_server", "oauth2", "pkce_code_challenge_method", default="S256"
+)
+BITBUCKET_SERVER_OAUTH2_USER_AVATAR_SIZE = get_config(
+    "bitbucket_server", "oauth2", "user_avatar_size", default=48
+)
+BITBUCKET_SERVER_OAUTH2_REDIRECT_URI = get_config(
+    "bitbucket_server", "oauth2", "redirect_uri",
+    default="https://codecov.io/login/bbs"
+)
+
 GITLAB_CLIENT_ID = get_config("gitlab", "client_id")
 GITLAB_CLIENT_SECRET = get_config("gitlab", "client_secret")
 GITLAB_REDIRECT_URI = get_config(

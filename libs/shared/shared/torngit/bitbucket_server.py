@@ -1,6 +1,11 @@
+import base64
+import hashlib
 import logging
 import os
+import secrets
+import urllib.parse
 from datetime import datetime
+from typing import Optional
 
 import httpx
 from oauthlib import oauth1
@@ -31,6 +36,121 @@ class BitbucketServer(TorngitBaseAdapter):
     @property
     def service_url(self):
         return self.get_service_url()
+    
+    @classmethod
+    def is_oauth2_enabled(cls):
+        """Check if OAuth 2.0 is enabled for Bitbucket Server"""
+        return get_config("bitbucket_server", "oauth2", "enabled", default=False)
+    
+    def _generate_pkce_pair(self) -> tuple[str, str]:
+        """Generate PKCE code verifier and challenge pair"""
+        # Generate code verifier (43-128 characters, URL-safe)
+        code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8').rstrip('=')
+        
+        # Generate code challenge using S256 method
+        code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(code_verifier.encode('utf-8')).digest()
+        ).decode('utf-8').rstrip('=')
+        
+        return code_verifier, code_challenge
+    
+    def _get_oauth2_endpoints(self) -> dict:
+        """Get OAuth 2.0 endpoints from configuration"""
+        base_url = self.service_url
+        return {
+            "authorize": get_config(
+                "bitbucket_server", "oauth2", "authorize_url",
+                default=f"{base_url}/rest/oauth2/latest/authorize"
+            ),
+            "token": get_config(
+                "bitbucket_server", "oauth2", "token_url", 
+                default=f"{base_url}/rest/oauth2/latest/token"
+            )
+        }
+    
+    def _determine_token_type(self, token: Optional[dict]) -> str:
+        """Determine if token is OAuth 1.0 or OAuth 2.0 format"""
+        if not token:
+            return "none"
+        
+        # OAuth 2.0 tokens have 'access_token' field
+        if isinstance(token, dict) and "access_token" in token:
+            return "oauth2"
+        
+        # OAuth 1.0 tokens have 'key' and 'secret' fields
+        if isinstance(token, dict) and "key" in token and "secret" in token:
+            return "oauth1"
+        
+        return "unknown"
+    
+    async def _refresh_oauth2_token_if_needed(self, token: dict) -> dict:
+        """Refresh OAuth 2.0 token if expired and refresh token is available"""
+        if self._determine_token_type(token) != "oauth2":
+            return token
+        
+        # Check if token is expired or about to expire
+        expires_at = token.get("expires_at")
+        if not expires_at:
+            return token  # No expiration info, assume valid
+        
+        try:
+            from datetime import datetime, timedelta
+            expires_datetime = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+            if datetime.now() < (expires_datetime - timedelta(minutes=5)):
+                return token  # Token still valid for at least 5 minutes
+        except (ValueError, TypeError):
+            pass  # Invalid date format, proceed with refresh
+        
+        # Attempt to refresh token
+        refresh_token = token.get("refresh_token")
+        if not refresh_token:
+            log.warning("OAuth 2.0 token expired but no refresh token available")
+            return token
+        
+        try:
+            new_token = await self._perform_token_refresh(refresh_token)
+            log.info("Successfully refreshed OAuth 2.0 token")
+            return new_token
+        except Exception as e:
+            log.warning(f"Failed to refresh OAuth 2.0 token: {e}")
+            return token
+    
+    async def _perform_token_refresh(self, refresh_token: str) -> dict:
+        """Perform OAuth 2.0 token refresh"""
+        endpoints = self._get_oauth2_endpoints()
+        
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": get_config("bitbucket_server", "client_id"),
+            "client_secret": get_config("bitbucket_server", "client_secret")
+        }
+        
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+            "User-Agent": os.getenv("USER_AGENT", "Default"),
+        }
+        
+        async with self.get_client() as client:
+            response = await client.post(
+                endpoints["token"],
+                data=data,
+                headers=headers
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"Token refresh failed: {response.status_code} {response.text}")
+            
+            token_data = response.json()
+            
+            # Add expiration timestamp if expires_in is provided
+            if "expires_in" in token_data:
+                from datetime import datetime, timedelta
+                expires_at = datetime.now() + timedelta(seconds=token_data["expires_in"])
+                token_data["expires_at"] = expires_at.isoformat()
+            
+            return token_data
 
     urls = {
         "user": "users/%(username)s",
@@ -105,28 +225,55 @@ class BitbucketServer(TorngitBaseAdapter):
             url = url_concat(url, kwargs)
 
         token_to_use = token or self.token
-        oauth_client = oauth1.Client(
-            self._oauth_consumer_token()["key"],
-            client_secret=self._oauth_consumer_token()["secret"],
-            resource_owner_key=token_to_use["key"],
-            resource_owner_secret=token_to_use["secret"],
-            signature_type=oauth1.SIGNATURE_TYPE_QUERY,
-        )
-
+        
+        # Determine token type and prepare headers accordingly
+        token_type = self._determine_token_type(token_to_use)
+        
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
             "User-Agent": os.getenv("USER_AGENT", "Default"),
         }
-        url, headers, _oauth_body = oauth_client.sign(
-            url, http_method=method, headers=headers
-        )
+        
+        # Handle OAuth 2.0 authentication
+        if token_type == "oauth2":
+            # Refresh token if needed
+            token_to_use = await self._refresh_oauth2_token_if_needed(token_to_use)
+            
+            # Add Bearer token to headers
+            access_token = token_to_use.get("access_token")
+            if access_token:
+                headers["Authorization"] = f"Bearer {access_token}"
+            else:
+                log.warning("OAuth 2.0 token missing access_token field")
+                
+        # Handle OAuth 1.0 authentication (fallback)
+        elif token_type == "oauth1":
+            try:
+                oauth_client = oauth1.Client(
+                    self._oauth_consumer_token()["key"],
+                    client_secret=self._oauth_consumer_token()["secret"],
+                    resource_owner_key=token_to_use["key"],
+                    resource_owner_secret=token_to_use["secret"],
+                    signature_type=oauth1.SIGNATURE_TYPE_QUERY,
+                )
+                url, headers, _oauth_body = oauth_client.sign(
+                    url, http_method=method, headers=headers
+                )
+            except Exception as e:
+                log.error(f"OAuth 1.0 signature generation failed: {e}")
+                raise TorngitClientError(f"Authentication failed: {e}")
+        
+        # Handle case where no valid token is available
+        elif token_type in ["none", "unknown"]:
+            log.warning(f"No valid authentication token available (type: {token_type})")
 
         log_dict = {
             "event": "api",
             "endpoint": url,
             "method": method,
-            "bot": token_to_use.get("username"),
+            "auth_type": token_type,
+            "bot": token_to_use.get("username") if isinstance(token_to_use, dict) else None,
             "repo_slug": self.slug,
         }
 
@@ -146,6 +293,15 @@ class BitbucketServer(TorngitBaseAdapter):
             )
         except (httpx.NetworkError, httpx.TimeoutException):
             raise TorngitServerUnreachableError("Bitbucket was not able to be reached.")
+        
+        # Handle authentication errors specifically
+        if res.status_code == 401:
+            if token_type == "oauth2":
+                log.warning("OAuth 2.0 authentication failed, token may be invalid")
+            elif token_type == "oauth1":
+                log.warning("OAuth 1.0 authentication failed, credentials may be invalid")
+            raise TorngitClientError("Authentication failed", code=401)
+            
         if res.status_code == 599:
             raise TorngitServerUnreachableError(
                 "Bitbucket was not able to be reached, server timed out."
@@ -303,6 +459,98 @@ class BitbucketServer(TorngitBaseAdapter):
             val["id"]: [k["id"] for k in val["parents"]] for val in res["values"]
         }
         return self.build_tree_from_commits(start, commit_mapping)
+    
+    # OAuth 2.0 public methods
+    def generate_oauth2_authorization_url(self, redirect_uri: str, state: str = None, scopes: list = None) -> tuple[str, str]:
+        """Generate OAuth 2.0 authorization URL with PKCE support"""
+        if not self.is_oauth2_enabled():
+            raise ValueError("OAuth 2.0 is not enabled for Bitbucket Server")
+        
+        endpoints = self._get_oauth2_endpoints()
+        code_verifier, code_challenge = self._generate_pkce_pair()
+        
+        # Default scopes if not provided
+        if scopes is None:
+            scopes = get_config("bitbucket_server", "oauth2", "scope", default=["PUBLIC_REPOS"])
+        
+        params = {
+            "response_type": "code",
+            "client_id": get_config("bitbucket_server", "client_id"),
+            "redirect_uri": redirect_uri,
+            "scope": " ".join(scopes) if isinstance(scopes, list) else scopes,
+        }
+        
+        # Add state parameter if provided
+        if state:
+            params["state"] = state
+        
+        # Add PKCE parameters if enabled
+        if get_config("bitbucket_server", "oauth2", "use_pkce", default=True):
+            params["code_challenge"] = code_challenge
+            params["code_challenge_method"] = get_config(
+                "bitbucket_server", "oauth2", "pkce_code_challenge_method", default="S256"
+            )
+        
+        # Build authorization URL
+        auth_url = endpoints["authorize"] + "?" + urllib.parse.urlencode(params)
+        
+        return auth_url, code_verifier
+    
+    async def exchange_code_for_token(self, code: str, redirect_uri: str, code_verifier: str = None) -> dict:
+        """Exchange authorization code for OAuth 2.0 access token"""
+        if not self.is_oauth2_enabled():
+            raise ValueError("OAuth 2.0 is not enabled for Bitbucket Server")
+        
+        endpoints = self._get_oauth2_endpoints()
+        
+        data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": get_config("bitbucket_server", "client_id"),
+            "client_secret": get_config("bitbucket_server", "client_secret"),
+        }
+        
+        # Add PKCE verifier if provided
+        if code_verifier and get_config("bitbucket_server", "oauth2", "use_pkce", default=True):
+            data["code_verifier"] = code_verifier
+        
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+            "User-Agent": os.getenv("USER_AGENT", "Default"),
+        }
+        
+        try:
+            async with self.get_client() as client:
+                response = await client.post(
+                    endpoints["token"],
+                    data=data,
+                    headers=headers
+                )
+                
+                if response.status_code != 200:
+                    error_text = response.text
+                    log.error(f"OAuth 2.0 token exchange failed: {response.status_code} {error_text}")
+                    raise TorngitClientError(f"Token exchange failed: {response.status_code}", code=response.status_code)
+                
+                token_data = response.json()
+                
+                # Add expiration timestamp if expires_in is provided
+                if "expires_in" in token_data:
+                    from datetime import datetime, timedelta
+                    expires_at = datetime.now() + timedelta(seconds=token_data["expires_in"])
+                    token_data["expires_at"] = expires_at.isoformat()
+                
+                log.info("Successfully exchanged authorization code for OAuth 2.0 token")
+                return token_data
+                
+        except (httpx.NetworkError, httpx.TimeoutException) as e:
+            log.error(f"Network error during token exchange: {e}")
+            raise TorngitServerUnreachableError("Failed to reach Bitbucket Server during token exchange")
+        except Exception as e:
+            log.error(f"Unexpected error during token exchange: {e}")
+            raise TorngitClientError(f"Token exchange failed: {e}")
 
     async def get_commit(self, commit, token=None):
         # https://developer.atlassian.com/static/rest/bitbucket-server/4.0.1/bitbucket-rest.html#idp3530560

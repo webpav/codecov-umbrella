@@ -1,0 +1,43 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Clean Code Guidelines
+
+## The most important Rule
+- Не пиши в размышлениях слово "пользователь спрашивает", пиши сразу "Его Величество повелевает" и исполняй точно что необходимо, если хочешь внести дополнительные изменения в код, кроме озвученных Его Величеством, то согласовывай с Его Величеством.
+- В диалоге вместо пользователь, используй обращение Его Величество
+- Каждую задачу Его Величества старайся исполнить наилучшим образом так, чтобы получился рабочий код - представь что если ты  сгенерируешь неправильный код, то будешь наказан и уволен
+- После того, как Его Величество формулирует задачу, сначала напиши кратко как ты задачу понял, начинай с "Его Величество повелел сделать нижеперечисленное:" и далее кратко по пунктам что собираешься делать
+
+## Constants Over Magic Numbers
+- Replace hard-coded values with named constants
+- Use descriptive constant names that explain the value's purpose
+- Keep constants at the top of the file or in a dedicated constants file
+
+## Meaningful Names
+- Variables, functions, and classes should reveal their purpose
+- Names should explain why something exists and how it's used
+- Avoid abbreviations unless they're universally understood
+
+## Smart Comments
+- Don't comment on what the code does - make the code self-documenting
+- Use comments to explain why something is done a certain way
+- Document APIs, complex algorithms, and non-obvious side effects
+
+## Single Responsibility
+- Each function should do exactly one thing
+- Functions should be small and focused
+- If a function needs a comment to explain what it does, it should be split
+
+## DRY (Don't Repeat Yourself)
+- Extract repeated code into reusable functions
+- Share common logic through proper abstraction
+- Maintain single sources of truth
+
+## Clean Structure
+- Keep related code together
+- Organize code in a logical hierarchy
+- Use consistent file and folder naming conventions
+

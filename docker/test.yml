@@ -46,6 +46,22 @@ bitbucket:
   bot:
     username: codecov-io
 
+# Bitbucket Data Center (Server) configuration
+# bitbucket_server:
+#   url: https://your-bitbucket-server.company.com          # Base URL of your Bitbucket Data Center
+#   client_id: your-oauth-client-id                         # OAuth Client ID from Application Link
+#   client_secret: your-oauth-client-secret                 # OAuth Client Secret from Application Link
+#   bot:
+#     key: your-bot-personal-access-token                   # Bot personal access token
+#   bots:
+#     tokenless:
+#       key: your-tokenless-bot-token                       # Tokenless bot access token
+#   oauth2:
+#     enabled: true                                         # Enable OAuth 2.0 (default: false)
+#     use_pkce: true                                        # Enable PKCE for security (default: true)
+#     pkce_code_challenge_method: S256                      # PKCE method: S256 or plain (default: S256)
+#     user_avatar_size: 48                                  # User avatar size in pixels (default: 48)
+
 gitlab:
   bot:
     username: codecov-io
