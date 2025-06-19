@@ -3,6 +3,7 @@ import logging
 import time
 import uuid
 from copy import deepcopy
+from datetime import UTC, datetime
 from typing import TypedDict
 
 import orjson
@@ -10,7 +11,6 @@ import sentry_sdk
 from asgiref.sync import async_to_sync
 from celery import chain, chord
 from django.conf import settings
-from django.utils import timezone
 from redis import Redis
 from redis.exceptions import LockError
 from sqlalchemy.orm import Session
@@ -36,6 +36,7 @@ from services.repository import (
     gitlab_webhook_update,
     possibly_update_commit_from_provider_info,
 )
+from services.test_analytics.ta_metrics import new_ta_tasks_repo_summary
 from services.test_results import TestResultsReportService
 from shared.celery_config import upload_task_name
 from shared.config import get_config
@@ -55,6 +56,9 @@ from tasks.upload_finisher import upload_finisher_task
 from tasks.upload_processor import UPLOAD_PROCESSING_LOCK_NAME, upload_processor_task
 
 log = logging.getLogger(__name__)
+
+# Date after which commits are considered for new TA tasks implementation
+NEW_TA_TASKS_CUTOFF_DATE = datetime(2025, 6, 20, tzinfo=UTC)
 
 CHUNK_SIZE = 3
 
@@ -539,7 +543,7 @@ class UploadTask(BaseCodecovTask, name=upload_task_name):
 
         # List to track possible measurements to insert later
         measurements_list: list[UserMeasurement] = []
-        created_at = timezone.now()
+        created_at = datetime.now(UTC)
 
         # List + helper mapping to track possible upload + flags to insert later
         upload_flag_map: dict[Upload, list | str | None] = {}
@@ -750,6 +754,22 @@ class UploadTask(BaseCodecovTask, name=upload_task_name):
         new_ta_tasks = NEW_TA_TASKS.check_value(commit.repoid, default="old")
         if not settings.TA_TIMESERIES_ENABLED:
             new_ta_tasks = "old"
+        else:
+            db_session: Session = commit.get_db_session()  # type: ignore
+            earliest_commit = (
+                db_session.query(Commit)
+                .filter(
+                    Commit.repoid == commit.repoid,
+                    Commit.timestamp > NEW_TA_TASKS_CUTOFF_DATE,
+                )
+                .order_by(Commit.timestamp)
+                .limit(1)
+                .first()
+            )
+
+            if earliest_commit:
+                new_ta_tasks = "new"
+                new_ta_tasks_repo_summary.inc()
 
         task_group = [
             test_results_processor_task.s(
