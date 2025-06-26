@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from django.conf import settings
 from rest_framework.exceptions import ErrorDetail
 
@@ -12,6 +14,7 @@ from shared.django_apps.core.tests.factories import (
     OwnerFactory,
     RepositoryFactory,
 )
+from shared.django_apps.reports.models import ReportSession
 from upload.serializers import (
     CommitReportSerializer,
     CommitSerializer,
@@ -124,6 +127,36 @@ def test_upload_serializer_null_build_url_empty_flags(db, mocker):
 
     serializer = UploadSerializer(data=data)
     assert serializer.is_valid()
+
+
+def test_upload_serializer_create_with_ci_service(db, mocker):
+    OwnerFactory()
+    user_with_uploads = OwnerFactory()
+    repo = RepositoryFactory.create(author=user_with_uploads, private=True)
+    RepositoryFactory.create(author=user_with_uploads, private=False)
+    commit = CommitFactory.create(repository=repo)
+    report = CommitReportFactory.create(commit=commit)
+
+    upload = UploadSerializer().create(
+        {
+            "build_url": None,
+            "flags": [],
+            "env": {},
+            "name": None,
+            "job_code": None,
+            "version": None,
+            "ci_service": "github-actions",
+            "external_id": UUID("00000000-0000-0000-0000-000000000000"),
+            "storage_path": None,
+            "repo_id": repo.repoid,
+            "report_id": report.id,
+            "upload_extras": {"a": "asdf"},
+            "state": "started",
+        },
+    )
+
+    assert isinstance(upload, ReportSession)
+    assert upload.provider == "github-actions"
 
 
 def test__create_existing_flags_map(db, mocker):
