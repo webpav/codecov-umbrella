@@ -793,6 +793,7 @@ class StripeService(AbstractPaymentService):
                     "error_type": type(e).__name__,
                 },
             )
+            raise e
 
     @_log_stripe_error
     def apply_cancellation_discount(self, owner: Owner):
