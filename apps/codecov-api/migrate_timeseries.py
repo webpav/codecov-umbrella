@@ -12,7 +12,7 @@ from shared.django_apps.utils.config import get_settings_module
 # apps/worker/migrate_timeseries.py
 
 # Note: this is the only difference from the worker version
-parent_module = "django_scaffold"
+parent_module = "codecov"
 #################################################################
 
 
