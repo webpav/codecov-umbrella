@@ -262,7 +262,9 @@ class BitbucketServer(TorngitBaseAdapter):
                 )
             except Exception as e:
                 log.error(f"OAuth 1.0 signature generation failed: {e}")
-                raise TorngitClientError(f"Authentication failed: {e}")
+                raise TorngitClientGeneralError(
+                    401, response_data={"error": str(e)}, message=f"Authentication failed: {e}"
+                )
         
         # Handle case where no valid token is available
         elif token_type in ["none", "unknown"]:
@@ -300,7 +302,9 @@ class BitbucketServer(TorngitBaseAdapter):
                 log.warning("OAuth 2.0 authentication failed, token may be invalid")
             elif token_type == "oauth1":
                 log.warning("OAuth 1.0 authentication failed, credentials may be invalid")
-            raise TorngitClientError("Authentication failed", code=401)
+            raise TorngitClientGeneralError(
+                401, response_data={"content": res.content}, message="Authentication failed"
+            )
             
         if res.status_code == 599:
             raise TorngitServerUnreachableError(
@@ -532,7 +536,11 @@ class BitbucketServer(TorngitBaseAdapter):
                 if response.status_code != 200:
                     error_text = response.text
                     log.error(f"OAuth 2.0 token exchange failed: {response.status_code} {error_text}")
-                    raise TorngitClientError(f"Token exchange failed: {response.status_code}", code=response.status_code)
+                    raise TorngitClientGeneralError(
+                        response.status_code,
+                        response_data={"content": response.content},
+                        message=f"Token exchange failed: {response.status_code}"
+                    )
                 
                 token_data = response.json()
                 
@@ -550,7 +558,9 @@ class BitbucketServer(TorngitBaseAdapter):
             raise TorngitServerUnreachableError("Failed to reach Bitbucket Server during token exchange")
         except Exception as e:
             log.error(f"Unexpected error during token exchange: {e}")
-            raise TorngitClientError(f"Token exchange failed: {e}")
+            raise TorngitClientGeneralError(
+                500, response_data={"error": str(e)}, message=f"Token exchange failed: {e}"
+            )
 
     async def get_commit(self, commit, token=None):
         # https://developer.atlassian.com/static/rest/bitbucket-server/4.0.1/bitbucket-rest.html#idp3530560
