@@ -161,7 +161,7 @@ class BitbucketServerLoginView(View, LoginMixin):
             oauth2_data = f"{state}|{code_verifier}"
             response.set_signed_cookie(
                 "_oauth2_state",
-                encryptor.encode(oauth2_data.encode()).decode(),
+                encryptor.encode(oauth2_data).decode(),
                 domain=settings.COOKIES_DOMAIN,
             )
             
@@ -212,11 +212,22 @@ class BitbucketServerLoginView(View, LoginMixin):
         return response
 
     async def actual_login_step(self, request):
-        # Check if OAuth 2.0 is enabled
-        if self._is_oauth2_enabled():
+        # Determine which OAuth flow to use based on actual callback type, not just configuration
+        has_oauth2_callback = (
+            request.GET.get('code') and
+            request.GET.get('state') and
+            request.COOKIES.get("_oauth2_state")
+        )
+        has_oauth1_callback = request.COOKIES.get("_oauth_request_token")
+
+        if has_oauth2_callback:
             return await self._oauth2_login_step(request)
-        else:
+        elif has_oauth1_callback:
             return await self._oauth1_login_step(request)
+        else:
+            # No valid callback detected, redirect to start authorization
+            log.warning("No valid OAuth callback detected in actual_login_step")
+            return redirect(reverse("bbs-login"))
     
     async def _oauth2_login_step(self, request):
         """Handle OAuth 2.0 login step"""
