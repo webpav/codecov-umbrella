@@ -1,131 +1,93 @@
+version: "3"
+
 services:
+  # Build the requirements image first
+  requirements:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.requirements
+    image: codecov/umbrella-reqs:local
+
   gateway:
-    image: codecov/self-hosted-gateway:rolling
+    image: codecov/self-hosted-gateway:latest-stable
     volumes:
-      - ./tools/devenv/config:/config:ro,cached
+      - ./config:/config
+      #- ${CODECOV_SSL_CERT-/cert/codecov.crt}:/etc/codecov/ssl/certs/cert.crt:ro # uncomment if using ssl
+      - ${CODECOV_SSL_CERT-./cert/nginx-selfsigned.crt}:/etc/codecov/ssl/certs/cert.crt:ro
     ports:
-      - "${CODECOV_PORT-8080}:8080"
+      #- "${CODECOV_PORT-8080}:8080"
+      - "${CODECOV_SSL_PORT-443}:8443" # uncomment if using ssl
     environment:
       - CODECOV_GATEWAY_MINIO_ENABLED=true
-      - CODECOV_MINIO_PORT=9002
+      - CODECOV_GATEWAY_SSL_ENABLED=true # uncomment if using ssl
     networks:
       - codecov
     depends_on:
       - api
       - frontend
 
-  # -------
-  # Pre-built Gazebo image
-  # -------
   frontend:
-    image: codecov/self-hosted-frontend:rolling
+    image: codecov/self-hosted-frontend:latest-stable
     environment:
-      - CODECOV_BASE_HOST=localhost:8080
-      - CODECOV_API_HOST=localhost:8080
-      - CODECOV_SCHEME=http
+      - CODECOV_BASE_HOST=codecov.karamba.cloud
+      - CODECOV_API_HOST=codecov.karamba.cloud
+      - CODECOV_IA_HOST=codecov.karamba.cloud
+      - CODECOV_SCHEME=https
     volumes:
-      - ./tools/devenv/config:/config:ro,cached
+      - ./config:/config
+    ports:
+      - "443"
+#      - "8080"
     networks:
       - codecov
 
-  # # -------
-  # # Gazebo local development
-  # #
-  # # This service will use your local Gazebo repo and run a yarn dev server
-  # # in a container within the codecov docker network.
-  # # Use if you're doing front end development AND want to use your local
-  # # api/shared/worker. If you're doing purely front end development, it's
-  # # often easier to just point your gazebo dev server at the staging API.
-  # # If you do want to use this, uncomment this service and comment out the
-  # # above frontend service.
-  # #
-  # # If you do this and want to prevent docker-compose.yml from showing up in
-  # # your `git status`, you can do so with:
-  # #
-  # # git update-index --assume-unchanged docker-compose.yml
-  # # -------
-  # frontend:
-  #   image: node:22-alpine
-  #   environment:
-  #     # Environment variables set here will override your gazebo .env files
-  #     - PROXY_TO=http://localhost:8080
-  #     - REACT_APP_API_URL=http://localhost:8080
-  #     - REACT_APP_BASE_URL=http://localhost:8080
-  #     # - REACT_APP_ENV=enterprise
-  #     # - REACT_APP_IS_SELF_HOSTED=true
-  #   volumes:
-  #     # Assumes gazebo is a sibling directory to umbrella.
-  #     # Change if that's not the case.
-  #     - ../gazebo:/gazebo
-  #   command: >
-  #     sh -c "cd /gazebo &&
-  #            yarn &&
-  #            yarn dev --port 8080"
-  #   networks:
-  #     - codecov
-
+  # Build and run API service
   api:
-    image: ${AR_REPO_PREFIX-codecov}/api
-    entrypoint: sh -c "/devenv-scripts/start-api.sh"
-    environment:
-      - RUN_ENV=DEV
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    build:
+      context: ./apps/codecov-api
+      dockerfile: docker/Dockerfile
+      args:
+        REQUIREMENTS_IMAGE: codecov/umbrella-reqs:local
+        BUILD_ENV: self-hosted
+        RELEASE_VERSION: local
+    image: codecov/self-hosted-api:latest-calver-oauth2
     volumes:
-      - ./tools/devenv/config:/config:ro,cached
-      - ./tools/devenv/scripts:/devenv-scripts:ro,cached
-      - ./:/app:cached
+      - ./config:/config
     networks:
       - codecov
     depends_on:
+      - requirements
       - minio
+      - timescale
       - postgres
       - redis
-      - timescale
 
+  # Build and run Worker service
   worker:
-    image: ${AR_REPO_PREFIX-codecov}/worker
-    entrypoint: sh -c "/devenv-scripts/start-worker.sh"
+    build:
+      context: ./apps/worker
+      dockerfile: docker/Dockerfile
+      args:
+        REQUIREMENTS_IMAGE: codecov/umbrella-reqs:local
+        BUILD_ENV: self-hosted-runtime
+        RELEASE_VERSION: local
+    image: codecov/self-hosted-worker:latest-calver
     environment:
-      - RUN_ENV=DEV
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - SETUP__TA_TIMESERIES__ENABLED=true
+      - RUN_ENV=ENTERPRISE
     volumes:
-      - ./tools/devenv/config:/config:ro,cached
-      - ./tools/devenv/scripts:/devenv-scripts:ro,cached
-      - ./:/app:cached
+      - ./config:/config
+      - archive-volume:/archive
     networks:
       - codecov
     depends_on:
+      - requirements
       - minio
-      - postgres
       - redis
-      - timescale
-
-  # Dummy service to run shared tests
-  shared:
-    # This is the name of the image build in libs/shared
-    image: ${AR_REPO_PREFIX-codecov}/dev-shared
-    tty: true
-    environment:
-      - SETUP__TA_TIMESERIES__ENABLED=true
-    volumes:
-      - ./libs/shared/shared:/app/libs/shared/shared
-      - ./libs/shared/tests:/app/libs/shared/tests
-      - ./libs/shared/.coveragerc:/app/libs/shared/.coveragerc
-    networks:
-      - codecov
-    depends_on:
-      - minio
       - postgres
-      - redis
       - timescale
 
   redis:
     image: redis:6.2-alpine
-    ports:
-      - "6380:6379"
     volumes:
       - redis-volume:/data
     networks:
@@ -134,42 +96,35 @@ services:
   postgres:
     image: postgres:14-alpine
     environment:
-      - POSTGRES_HOST_AUTH_METHOD=trust
+      - POSTGRES_PASSWORD=testpassword
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
     volumes:
       - postgres-volume:/var/lib/postgresql/data
-    ports:
-      - "5434:5432"
     networks:
       - codecov
 
   timescale:
-    image: timescale/timescaledb-ha:pg14-latest
+    image: timescale/timescaledb:latest-pg14
     environment:
-      - POSTGRES_HOST_AUTH_METHOD=trust
+      - POSTGRES_PASSWORD=testpassword
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
     volumes:
       - timescale-volume:/var/lib/postgresql/data
-      - ./docker/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
-    ports:
-      - "5433:5432"
     networks:
       - codecov
 
   minio:
-    image: minio/minio:latest
-    command: server --address ":9002" --console-address ":9001" /export
+    image: minio/minio:RELEASE.2020-04-15T00-39-01Z
+    command: server /export
     ports:
-      - "9002:9002"
-      - "9001:9001"
+      - "${CODECOV_MINIO_PORT-9000}:9000"
     environment:
       - MINIO_ACCESS_KEY=codecov-default-key
       - MINIO_SECRET_KEY=codecov-default-secret
     volumes:
       - archive-volume:/export
-    networks:
-      - codecov
-
-  mailhog:
-    image: mailhog/mailhog:latest
     networks:
       - codecov
 

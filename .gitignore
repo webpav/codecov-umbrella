@@ -130,3 +130,7 @@ dmypy.json
 
 *.pem
 junit.xml
+.github/
+.github.bak/
+.gitbub
+.gitignore
