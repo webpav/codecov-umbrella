@@ -8,7 +8,7 @@ export CI_REQS_REPO ?= codecov/umbrella-reqs
 SHARED_SHA := $(shell git ls-files libs/shared | LC_ALL=C sort | xargs sha1sum | cut -d ' ' -f 1 | sha1sum | head -c 40)
 DOCKER_REQS_SHA := $(shell sha1sum docker/Dockerfile.requirements | head -c 40)
 UV_LOCK_SHA := $(shell sha1sum ./uv.lock | head -c 40)
-export REQUIREMENTS_TAG := reqs-${UV_LOCK_SHA}-${DOCKER_REQS_SHA}-${SHARED_SHA}
+export REQUIREMENTS_TAG := $(shell echo "reqs-${UV_LOCK_SHA}-${DOCKER_REQS_SHA}-${SHARED_SHA}" | ${REQUIREMENTS_TAG_HASH_CMD:-cat})
 
 ######
 # Generic targets for building images.
