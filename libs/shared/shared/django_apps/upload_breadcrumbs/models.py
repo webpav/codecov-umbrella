@@ -18,15 +18,15 @@ class Milestones(models.TextChoices):
 
     These milestones represent the various stages of the upload process.
 
-    FETCHING_COMMIT_DETAILS: Creating a commit database entry and fetching commit details.
-    COMMIT_PROCESSED: Commit has been processed and is ready for report preparation.
-    PREPARING_FOR_REPORT: Creating a report database entry.
-    READY_FOR_REPORT: Carry-forwarding flags from previous uploads is complete.
-    WAITING_FOR_COVERAGE_UPLOAD: Create a pre-signed URL for the upload and wait for the coverage upload.
-    COMPILING_UPLOADS: Scheduling upload processing task(s) and initializing any missing database entries.
-    PROCESSING_UPLOAD: Processing the uploaded file(s).
-    UPLOAD_COMPLETE: Processing and compilation of the upload is complete.
-    NOTIFICATIONS_SENT: Notifications (e.g. pull request comments) have been sent.
+    * FETCHING_COMMIT_DETAILS: Creating a commit database entry and fetching commit details.
+    * COMMIT_PROCESSED: Commit has been processed and is ready for report preparation.
+    * PREPARING_FOR_REPORT: Creating a report database entry.
+    * READY_FOR_REPORT: Carry-forwarding flags from previous uploads is complete.
+    * WAITING_FOR_COVERAGE_UPLOAD: Create a pre-signed URL for the upload and wait for the coverage upload.
+    * COMPILING_UPLOADS: Scheduling upload processing task(s) and initializing any missing database entries.
+    * PROCESSING_UPLOAD: Processing the uploaded file(s).
+    * UPLOAD_COMPLETE: Processing and compilation of the upload is complete.
+    * NOTIFICATIONS_SENT: Notifications (e.g. pull request comments) have been sent.
     """
 
     FETCHING_COMMIT_DETAILS = "fcd", _("Fetching commit details")
@@ -47,13 +47,14 @@ class Endpoints(models.TextChoices):
     These endpoints are all part of the upload API.
     """
 
-    CREATE_COMMIT = "cc", _("Create commit")
-    CREATE_REPORT = "cr", _("Create report")
-    DO_UPLOAD = "du", _("Do upload")
-    EMPTY_UPLOAD = "eu", _("Empty upload")
-    UPLOAD_COMPLETION = "ucomp", _("Upload completion")
-    UPLOAD_COVERAGE = "ucov", _("Upload coverage")
-    LEGACY_UPLOAD_COVERAGE = "luc", _("Legacy upload coverage")
+    # Labels are URL names from apps/codecov-api/upload/urls.py
+    CREATE_COMMIT = "cc", _("new_upload.commits")
+    CREATE_REPORT = "cr", _("new_upload.reports")
+    DO_UPLOAD = "du", _("new_upload.uploads")
+    EMPTY_UPLOAD = "eu", _("new_upload.empty_upload")
+    UPLOAD_COMPLETION = "ucomp", _("new_upload.upload-complete")
+    UPLOAD_COVERAGE = "ucov", _("new_upload.upload_coverage")
+    LEGACY_UPLOAD_COVERAGE = "luc", _("upload-handler")
 
 
 class Errors(models.TextChoices):
