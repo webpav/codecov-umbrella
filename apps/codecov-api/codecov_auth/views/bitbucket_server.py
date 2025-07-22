@@ -238,7 +238,7 @@ class BitbucketServerLoginView(View, LoginMixin):
         
         # Extract state and code verifier from cookie
         try:
-            oauth2_data = encryptor.decode(oauth2_cookie).decode()
+            oauth2_data = encryptor.decode(oauth2_cookie)
             stored_state, code_verifier = oauth2_data.split("|", 1)
         except Exception as e:
             log.error(f"Failed to decode OAuth 2.0 state cookie: {e}")
