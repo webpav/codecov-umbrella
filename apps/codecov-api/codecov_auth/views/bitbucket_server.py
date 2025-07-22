@@ -27,8 +27,7 @@ class BitbucketServerLoginView(View, LoginMixin):
         return BitbucketServer.is_oauth2_enabled()
     
     def _get_redirect_uri(self, request):
-        """Generate redirect URI for OAuth 2.0"""
-        return request.build_absolute_uri(reverse('bbs-login'))
+        return f"{settings.CODECOV_URL}/login/bbs"
     
     def _generate_state(self):
         """Generate secure state parameter for OAuth 2.0"""
