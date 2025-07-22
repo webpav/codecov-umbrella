@@ -24,7 +24,7 @@ class BitbucketServerLoginView(View, LoginMixin):
     
     def _is_oauth2_enabled(self):
         """Check if OAuth 2.0 is enabled from settings"""
-        return getattr(settings, 'BITBUCKET_SERVER_OAUTH2_ENABLED', False)
+        return BitbucketServer.is_oauth2_enabled()
     
     def _get_redirect_uri(self, request):
         """Generate redirect URI for OAuth 2.0"""
@@ -354,6 +354,9 @@ class BitbucketServerLoginView(View, LoginMixin):
     @async_to_sync
     async def get(self, request):
         try:
+            # First check if OAuth 2.0 is enabled in configuration
+            oauth2_enabled = self._is_oauth2_enabled()
+            
             # Check for OAuth 2.0 callback (code parameter) or OAuth 1.0 callback (oauth_token cookie)
             has_oauth2_callback = (
                 request.GET.get('code') and 
@@ -362,10 +365,18 @@ class BitbucketServerLoginView(View, LoginMixin):
             )
             has_oauth1_callback = request.COOKIES.get("_oauth_request_token")
             
+            # If OAuth 2.0 is enabled but we have OAuth 1.0 callback, prioritize OAuth 2.0
+            if oauth2_enabled and has_oauth1_callback and not has_oauth2_callback:
+                log.warning("OAuth 2.0 is enabled but OAuth 1.0 callback detected, cleaning up old cookies and redirecting")
+                # Clear old OAuth 1.0 cookies and redirect to start fresh OAuth 2.0 flow
+                response = redirect(reverse("bbs-login"))
+                response.delete_cookie("_oauth_request_token", domain=settings.COOKIES_DOMAIN)
+                return response
+            
             if has_oauth2_callback:
                 log.info("Logging into bitbucket_server after OAuth 2.0 authorization")
                 return await self.actual_login_step(request)
-            elif has_oauth1_callback:
+            elif has_oauth1_callback and not oauth2_enabled:
                 log.info("Logging into bitbucket_server after OAuth 1.0 authorization")
                 return await self.actual_login_step(request)
             else:

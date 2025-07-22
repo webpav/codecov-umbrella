@@ -41,3 +41,7 @@ alwaysApply: true
 - Organize code in a logical hierarchy
 - Use consistent file and folder naming conventions
 
+## Executing commands
+- Never run python locally
+- Never run tests locally
+- Never execute code locally
