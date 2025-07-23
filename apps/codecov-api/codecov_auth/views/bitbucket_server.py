@@ -1,3 +1,26 @@
+"""
+Bitbucket Server OAuth Authentication View
+
+This module handles OAuth 1.0 and OAuth 2.0 authentication flows for Bitbucket Server/Data Center.
+
+Key Implementation Details:
+1. Supports both OAuth 1.0 (legacy) and OAuth 2.0 flows
+2. Uses Bitbucket Server personal projects to extract username
+3. Every user in Bitbucket Server automatically gets a personal project with key ~username
+4. This approach doesn't require admin permissions and works with standard user permissions
+
+Username Extraction Strategy:
+- Call /api/latest/projects endpoint (requires basic REPO_READ permission)
+- Filter projects where key starts with "~" (personal projects)
+- Extract username by removing "~" prefix from project key
+- This is much more reliable than using admin-only endpoints
+
+OAuth Flow Handling:
+- OAuth 2.0: Uses PKCE flow with state parameter for security
+- OAuth 1.0: Legacy flow for backwards compatibility
+- Automatic detection of callback type based on request parameters
+"""
+
 import base64
 import logging
 import secrets
@@ -61,14 +84,55 @@ class BitbucketServerLoginView(View, LoginMixin):
             return "unknown"
     
     async def _fetch_oauth2_user_data(self, repo_service, token):
-        """Fetch user data using OAuth 2.0 Bearer token"""
+        """Fetch user data using OAuth 2.0 Bearer token with Bitbucket Server personal projects approach"""
         try:
-            # For OAuth 2.0, get current user info directly via REST API
-            # https://developer.atlassian.com/server/bitbucket/rest/v903/api-group-users/#api-api-latest-users-get
-            current_user = await repo_service.api("GET", "/user")
+            # SOLUTION: Use personal projects to extract username
+            # In Bitbucket Server, every user automatically gets a personal project with key ~username
+            # This is documented behavior and doesn't require admin permissions
             
-            # Get user organizations/teams
+            log.info("Fetching OAuth 2.0 user data using personal projects approach")
+            
+            # Step 1: Get all projects that the authenticated user can access
+            projects_response = await repo_service.api("GET", "/api/latest/projects", limit=100)
+            
+            if not projects_response or not projects_response.get("values"):
+                raise Exception("No projects found for the authenticated user")
+            
+            # Step 2: Find personal project (key starts with ~)
+            personal_projects = [
+                project for project in projects_response["values"]
+                if project.get("key", "").startswith("~")
+            ]
+            
+            if not personal_projects:
+                raise Exception("No personal projects found. User may not have a personal project.")
+            
+            # Step 3: Extract username from personal project key (~username)
+            personal_project = personal_projects[0]  # User should only have one personal project
+            project_key = personal_project.get("key", "")
+            
+            if not project_key.startswith("~"):
+                raise Exception("Invalid personal project key format")
+            
+            # Extract username by removing the ~ prefix
+            username = project_key[1:]  # Remove the ~ prefix
+            
+            if not username:
+                raise Exception("Could not extract username from personal project key")
+            
+            log.info(f"Successfully extracted username from personal project: {username}")
+            
+            # Step 4: Get user organizations/teams
             user_orgs = await repo_service.list_teams()
+            
+            # Step 5: Build user object using personal project information
+            user = {
+                "id": personal_project.get("owner", {}).get("id"),
+                "name": username,
+                "slug": username,
+                "displayName": personal_project.get("owner", {}).get("displayName", username),
+                "emailAddress": personal_project.get("owner", {}).get("emailAddress"),
+            }
             
             # Build authenticated user structure for OAuth 2.0
             authenticated_user = {
@@ -76,8 +140,9 @@ class BitbucketServerLoginView(View, LoginMixin):
                 "refresh_token": token.get("refresh_token"),
                 "expires_at": token.get("expires_at"),
                 "token_type": token.get("token_type", "Bearer"),
-                "id": current_user["id"],
-                "login": current_user["name"],
+                "id": user.get("id"),
+                "login": username,
+                "username": username,
             }
             
             return {
@@ -88,30 +153,66 @@ class BitbucketServerLoginView(View, LoginMixin):
             }
             
         except Exception as e:
-            log.error(f"Failed to fetch OAuth 2.0 user data: {e}")
+            log.error(f"Failed to fetch OAuth 2.0 user data using personal projects: {e}")
             raise
     
     async def _fetch_oauth1_user_data(self, repo_service, token):
-        """Fetch user data using OAuth 1.0 signed requests (legacy)"""
+        """Fetch user data using OAuth 1.0 signed requests with Bitbucket Server personal projects approach"""
         try:
-            # For OAuth 1.0, use the legacy whoami endpoint
-            # https://answers.atlassian.com/questions/9379031/answers/9379803
-            whoami_url = f"{settings.BITBUCKET_SERVER_URL}/plugins/servlet/applinks/whoami"
-            username = await repo_service.api("GET", whoami_url)
+            # SOLUTION: Use personal projects to extract username
+            # Same approach as OAuth 2.0 but with OAuth 1.0 token format
             
-            # Get detailed user info
-            # https://developer.atlassian.com/static/rest/bitbucket-server/4.0.1/bitbucket-rest.html#idp2649152
-            user = await repo_service.api("GET", f"/users/{username}")
+            log.info("Fetching OAuth 1.0 user data using personal projects approach")
             
-            # Get user organizations/teams
+            # Step 1: Get all projects that the authenticated user can access
+            projects_response = await repo_service.api("GET", "/api/latest/projects", limit=100)
+            
+            if not projects_response or not projects_response.get("values"):
+                raise Exception("No projects found for the authenticated user")
+            
+            # Step 2: Find personal project (key starts with ~)
+            personal_projects = [
+                project for project in projects_response["values"]
+                if project.get("key", "").startswith("~")
+            ]
+            
+            if not personal_projects:
+                raise Exception("No personal projects found. User may not have a personal project.")
+            
+            # Step 3: Extract username from personal project key (~username)
+            personal_project = personal_projects[0]  # User should only have one personal project
+            project_key = personal_project.get("key", "")
+            
+            if not project_key.startswith("~"):
+                raise Exception("Invalid personal project key format")
+            
+            # Extract username by removing the ~ prefix
+            username = project_key[1:]  # Remove the ~ prefix
+            
+            if not username:
+                raise Exception("Could not extract username from personal project key")
+            
+            log.info(f"Successfully extracted username from personal project: {username}")
+            
+            # Step 4: Get user organizations/teams
             user_orgs = await repo_service.list_teams()
+            
+            # Step 5: Build user object using personal project information
+            user = {
+                "id": personal_project.get("owner", {}).get("id"),
+                "name": username,
+                "slug": username,
+                "displayName": personal_project.get("owner", {}).get("displayName", username),
+                "emailAddress": personal_project.get("owner", {}).get("emailAddress"),
+            }
             
             # Build authenticated user structure for OAuth 1.0
             authenticated_user = {
                 "key": token["key"],
                 "secret": token["secret"],
-                "id": user["id"],
-                "login": user["name"],
+                "id": user.get("id"),
+                "login": username,
+                "username": username,
             }
             
             return {
@@ -122,7 +223,7 @@ class BitbucketServerLoginView(View, LoginMixin):
             }
             
         except Exception as e:
-            log.error(f"Failed to fetch OAuth 1.0 user data: {e}")
+            log.error(f"Failed to fetch OAuth 1.0 user data using personal projects: {e}")
             raise
 
     async def redirect_to_bitbucket_server_step(self, request):
