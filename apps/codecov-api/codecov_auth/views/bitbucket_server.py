@@ -93,7 +93,8 @@ class BitbucketServerLoginView(View, LoginMixin):
             log.info("Fetching OAuth 2.0 user data using personal projects approach")
             
             # Step 1: Get all projects that the authenticated user can access
-            projects_response = await repo_service.api("GET", "/api/latest/projects", limit=100)
+            # FIXED: Use correct path without /api/latest prefix since base URL already includes /rest/api/1.0
+            projects_response = await repo_service.api("GET", "/projects", limit=100)
             
             if not projects_response or not projects_response.get("values"):
                 raise Exception("No projects found for the authenticated user")
@@ -165,7 +166,8 @@ class BitbucketServerLoginView(View, LoginMixin):
             log.info("Fetching OAuth 1.0 user data using personal projects approach")
             
             # Step 1: Get all projects that the authenticated user can access
-            projects_response = await repo_service.api("GET", "/api/latest/projects", limit=100)
+            # FIXED: Use correct path without /api/latest prefix since base URL already includes /rest/api/1.0
+            projects_response = await repo_service.api("GET", "/projects", limit=100)
             
             if not projects_response or not projects_response.get("values"):
                 raise Exception("No projects found for the authenticated user")
