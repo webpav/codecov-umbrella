@@ -38,7 +38,11 @@ build.requirements:
 			   --network host \
                -f docker/Dockerfile.requirements . \
                -t ${AR_REQS_REPO}:${REQUIREMENTS_TAG} \
-	       -t ${CI_REQS_REPO}:${REQUIREMENTS_TAG}
+	       -t ${CI_REQS_REPO}:${REQUIREMENTS_TAG} \
+	       --build-arg IMAGE_SOURCE=${IMAGE_SOURCE} \
+	       --build-arg IMAGE_REVISION=${IMAGE_REVISION} \
+	       --build-arg IMAGE_VERSION=${REQUIREMENTS_TAG} \
+	       --build-arg IMAGE_TITLE=codecov-umbrella-reqs
 
 # Build a test requirements image. Requires that the base reqs image exist.
 build.test-requirements:
@@ -47,7 +51,11 @@ build.test-requirements:
 	       -f docker/Dockerfile.test-requirements . \
 	       -t ${AR_REQS_REPO}:${TEST_REQS_TAG} \
 	       -t ${CI_REQS_REPO}:${TEST_REQS_TAG} \
-	       --build-arg REQUIREMENTS_IMAGE=${AR_REQS_REPO}:${REQUIREMENTS_TAG}
+	       --build-arg REQUIREMENTS_IMAGE=${AR_REQS_REPO}:${REQUIREMENTS_TAG} \
+	       --build-arg IMAGE_SOURCE=${IMAGE_SOURCE} \
+	       --build-arg IMAGE_REVISION=${IMAGE_REVISION} \
+	       --build-arg IMAGE_VERSION=${TEST_REQS_TAG} \
+	       --build-arg IMAGE_TITLE=codecov-umbrella-test-reqs
 
 # Build an image for local development.
 _build.local:
@@ -58,6 +66,10 @@ _build.local:
 		--build-arg WORKDIR=/app/${APP_DIR} \
 		--build-arg ENTRYPOINT=${ENTRYPOINT} \
 		--build-arg DJANGO_SETTINGS_PARENT=${DJANGO_SETTINGS_PARENT} \
+		--build-arg IMAGE_SOURCE=${IMAGE_SOURCE} \
+		--build-arg IMAGE_REVISION=${IMAGE_REVISION} \
+		--build-arg IMAGE_VERSION=${IMAGE_VERSION} \
+		--build-arg IMAGE_TITLE=${IMAGE_TITLE} \
 		--build-arg BUILD_ENV=local
 
 # Build an image (+ its reqs base) for local development.
@@ -73,13 +85,15 @@ _build.app:
 		-t ${AR_REPO}:${VERSION} \
 		--label "org.label-schema.vendor"="Codecov" \
 		--label "org.label-schema.version"="${release_version}-${sha}" \
-		--label "org.opencontainers.image.revision"="$(full_sha)" \
-		--label "org.opencontainers.image.source"="github.com/codecov/umbrella" \
 		--build-arg REQUIREMENTS_IMAGE=${AR_REQS_REPO}:${REQUIREMENTS_TAG} \
 		--build-arg WORKDIR=/app/${APP_DIR} \
 		--build-arg ENTRYPOINT=${ENTRYPOINT} \
 		--build-arg DJANGO_SETTINGS_PARENT=${DJANGO_SETTINGS_PARENT} \
 		--build-arg RELEASE_VERSION=${VERSION} \
+		--build-arg IMAGE_SOURCE=${IMAGE_SOURCE} \
+		--build-arg IMAGE_REVISION=${IMAGE_REVISION} \
+		--build-arg IMAGE_VERSION=${IMAGE_VERSION} \
+		--build-arg IMAGE_TITLE=${IMAGE_TITLE} \
 		--build-arg BUILD_ENV=cloud
 
 # Build a production image based on the test requirements image.
@@ -89,12 +103,14 @@ _build.test-app:
 		-t ${AR_REPO}:test-${VERSION} \
 		--label "org.label-schema.vendor"="Codecov" \
 		--label "org.label-schema.version"="${release_version}-${sha}" \
-		--label "org.opencontainers.image.revision"="$(full_sha)" \
-		--label "org.opencontainers.image.source"="github.com/codecov/umbrella" \
 		--build-arg REQUIREMENTS_IMAGE=${AR_REQS_REPO}:${TEST_REQS_TAG} \
 		--build-arg WORKDIR=/app/${APP_DIR} \
 		--build-arg ENTRYPOINT=${ENTRYPOINT} \
 		--build-arg RELEASE_VERSION=${VERSION} \
+		--build-arg IMAGE_SOURCE=${IMAGE_SOURCE} \
+		--build-arg IMAGE_REVISION=${IMAGE_REVISION} \
+		--build-arg IMAGE_VERSION=test-${IMAGE_VERSION} \
+		--build-arg IMAGE_TITLE=${IMAGE_TITLE} \
 		--build-arg BUILD_ENV=cloud
 
 # Build a self-hosted image.
@@ -111,6 +127,10 @@ _build.self-hosted-base:
 		--build-arg ENTRYPOINT=${ENTRYPOINT} \
 		--build-arg DJANGO_SETTINGS_PARENT=${DJANGO_SETTINGS_PARENT} \
 		--build-arg RELEASE_VERSION=${VERSION} \
+		--build-arg IMAGE_SOURCE=${IMAGE_SOURCE} \
+		--build-arg IMAGE_REVISION=${IMAGE_REVISION} \
+		--build-arg IMAGE_VERSION=${IMAGE_VERSION}-no-dependencies \
+		--build-arg IMAGE_TITLE=${IMAGE_TITLE} \
 		--build-arg BUILD_ENV=self-hosted
 
 _build.self-hosted-runtime:
@@ -124,6 +144,10 @@ _build.self-hosted-runtime:
 		--build-arg ENTRYPOINT=${ENTRYPOINT} \
 		--build-arg DJANGO_SETTINGS_PARENT=${DJANGO_SETTINGS_PARENT} \
 		--build-arg RELEASE_VERSION=${VERSION} \
+		--build-arg IMAGE_SOURCE=${IMAGE_SOURCE} \
+		--build-arg IMAGE_REVISION=${IMAGE_REVISION} \
+		--build-arg IMAGE_VERSION=${IMAGE_VERSION} \
+		--build-arg IMAGE_TITLE=${IMAGE_TITLE} \
 		--build-arg BUILD_ENV=self-hosted-runtime
 
 _tag.latest:

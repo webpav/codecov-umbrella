@@ -1,11 +1,16 @@
 import logging
 import os
 from datetime import datetime
+from urllib.parse import parse_qsl
 
 import httpx
 from oauthlib import oauth1
 
-from shared.config import get_config
+from shared.config import (
+    MissingConfigException,
+    get_config,
+    load_file_from_path_at_config,
+)
 from shared.torngit.base import TorngitBaseAdapter
 from shared.torngit.exceptions import (
     TorngitClientError,
@@ -18,6 +23,9 @@ from shared.torngit.status import Status
 from shared.utils.urls import url_concat
 
 log = logging.getLogger(__name__)
+
+OAUTH1_RSA_AUTH_METHOD = "oauth1_rsa"
+OAUTH1_HMAC_AUTH_METHOD = "oauth1_hmac"
 
 
 class BitbucketServer(TorngitBaseAdapter):
@@ -95,6 +103,63 @@ class BitbucketServer(TorngitBaseAdapter):
         else:
             return {"files": []}
 
+    def _get_rsa_private_key(self):
+        private_key = get_config("bitbucket_server", "private_key")
+        if private_key:
+            return private_key
+
+        try:
+            return load_file_from_path_at_config("bitbucket_server", "pemfile")
+        except MissingConfigException:
+            log.exception(
+                "`bitbucket_server.pemfile` or `bitbucket_server.private_key` is required for OAuth1 RSA-SHA1"
+            )
+            raise
+        except FileNotFoundError:
+            log.exception(
+                "No PEM file found at configured path (`bitbucket_server.pemfile`)",
+                extra={"path": get_config("bitbucket_server", "pemfile")},
+            )
+            raise
+
+    def _oauth_client(self, token_to_use):
+        auth_method = get_config(
+            "bitbucket_server", "auth_method", default=OAUTH1_RSA_AUTH_METHOD
+        )
+
+        if auth_method == OAUTH1_RSA_AUTH_METHOD:
+            return oauth1.Client(
+                self._oauth_consumer_token()["key"],
+                resource_owner_key=token_to_use["key"],
+                resource_owner_secret=token_to_use["secret"],
+                signature_method=oauth1.SIGNATURE_RSA,
+                signature_type=oauth1.SIGNATURE_TYPE_QUERY,
+                rsa_key=self._get_rsa_private_key(),
+            )
+
+        if auth_method == OAUTH1_HMAC_AUTH_METHOD:
+            return oauth1.Client(
+                self._oauth_consumer_token()["key"],
+                client_secret=self._oauth_consumer_token()["secret"],
+                resource_owner_key=token_to_use["key"],
+                resource_owner_secret=token_to_use["secret"],
+                signature_type=oauth1.SIGNATURE_TYPE_QUERY,
+            )
+
+        raise ValueError(f"Unsupported bitbucket_server.auth_method: {auth_method}")
+
+    def _parse_response_body(self, res):
+        content_type = res.headers.get("Content-Type", "").lower()
+        if "application/json" in content_type:
+            return res.json()
+
+        text = res.text
+        if "application/x-www-form-urlencoded" in content_type or "oauth_token=" in text:
+            parsed = dict(parse_qsl(text, keep_blank_values=True))
+            return parsed if parsed else text
+
+        return text
+
     async def api(self, method, url, body=None, token=None, **kwargs):
         # process desired api path
         if not url.startswith("http"):
@@ -105,13 +170,7 @@ class BitbucketServer(TorngitBaseAdapter):
             url = url_concat(url, kwargs)
 
         token_to_use = token or self.token
-        oauth_client = oauth1.Client(
-            self._oauth_consumer_token()["key"],
-            client_secret=self._oauth_consumer_token()["secret"],
-            resource_owner_key=token_to_use["key"],
-            resource_owner_secret=token_to_use["secret"],
-            signature_type=oauth1.SIGNATURE_TYPE_QUERY,
-        )
+        oauth_client = self._oauth_client(token_to_use)
 
         headers = {
             "Accept": "application/json",
@@ -159,10 +218,8 @@ class BitbucketServer(TorngitBaseAdapter):
             )
         if res.status_code == 204:
             return None
-        elif "application/json" in res.headers.get("Content-Type"):
-            return res.json()
         else:
-            return res.text
+            return self._parse_response_body(res)
 
     async def get_authenticated(self, token=None):
         # https://developer.atlassian.com/static/rest/bitbucket-server/4.0.1/bitbucket-rest.html#idp1889424

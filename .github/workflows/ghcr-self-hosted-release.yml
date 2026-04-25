@@ -1,0 +1,129 @@
+name: Build Self Hosted Images for GHCR
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to push. Defaults to rsa-sha1-<short-sha>."
+        required: false
+        type: string
+      push_latest:
+        description: "Also push the latest tag for api and worker runtime images."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ghcr-self-hosted-${{ github.ref }}-${{ inputs.image_tag || github.sha }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_SOURCE: https://github.com/${{ github.repository }}
+
+jobs:
+  build-requirements:
+    name: Build and Push Requirements
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Validate GHCR variables
+        run: |
+          test -n "${{ vars.GHCR_REQUIREMENTS_REPO }}" || (echo "Missing GitHub variable GHCR_REQUIREMENTS_REPO" && exit 1)
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ vars.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+
+      - name: Build and push requirements image
+        env:
+          AR_REQS_REPO: ${{ vars.GHCR_REQUIREMENTS_REPO }}
+          IMAGE_REVISION: ${{ github.sha }}
+        run: |
+          make build.requirements
+          make push.requirements
+
+  build-and-push:
+    name: Build and Push ${{ matrix.name }}
+    needs: [build-requirements]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            make_target_prefix: api.
+            image_repo: ${{ vars.GHCR_SELF_HOSTED_API_IMAGE }}
+          - name: worker
+            make_target_prefix: worker.
+            image_repo: ${{ vars.GHCR_SELF_HOSTED_WORKER_IMAGE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Validate GHCR variables
+        run: |
+          test -n "${{ vars.GHCR_REQUIREMENTS_REPO }}" || (echo "Missing GitHub variable GHCR_REQUIREMENTS_REPO" && exit 1)
+          test -n "${{ matrix.image_repo }}" || (echo "Missing GitHub variable for ${{ matrix.name }} GHCR image" && exit 1)
+
+      - name: Resolve image tag
+        shell: bash
+        env:
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          if [[ -n "$INPUT_IMAGE_TAG" ]]; then
+            if [[ ! "$INPUT_IMAGE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+              echo "Invalid image_tag. Use a valid Docker tag: letters, numbers, _, ., and -; max 128 chars."
+              exit 1
+            fi
+            printf 'IMAGE_TAG=%s\n' "$INPUT_IMAGE_TAG" >> "$GITHUB_ENV"
+          else
+            printf 'IMAGE_TAG=rsa-sha1-%s\n' "${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ vars.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+
+      - name: Build self-hosted image
+        env:
+          AR_REQS_REPO: ${{ vars.GHCR_REQUIREMENTS_REPO }}
+          DOCKERHUB_REPO: ${{ matrix.image_repo }}
+          IMAGE_REVISION: ${{ github.sha }}
+        run: |
+          VERSION="$IMAGE_TAG" make ${{ matrix.make_target_prefix }}build.self-hosted
+
+      - name: Push self-hosted image
+        env:
+          DOCKERHUB_REPO: ${{ matrix.image_repo }}
+        run: |
+          docker push "${DOCKERHUB_REPO}:${IMAGE_TAG}"
+          docker push "${DOCKERHUB_REPO}:${IMAGE_TAG}-no-dependencies"
+
+      - name: Push latest runtime tag
+        if: ${{ inputs.push_latest }}
+        env:
+          DOCKERHUB_REPO: ${{ matrix.image_repo }}
+        run: |
+          docker tag "${DOCKERHUB_REPO}:${IMAGE_TAG}" "${DOCKERHUB_REPO}:latest"
+          docker tag "${DOCKERHUB_REPO}:${IMAGE_TAG}-no-dependencies" "${DOCKERHUB_REPO}:latest-no-dependencies"
+          docker push "${DOCKERHUB_REPO}:latest"
+          docker push "${DOCKERHUB_REPO}:latest-no-dependencies"

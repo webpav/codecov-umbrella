@@ -17,6 +17,27 @@ def test_validate_install_configuration_simple(mocker):
     assert mock_warning.call_count == 0
 
 
+def test_validate_bitbucket_server_rsa_config(mocker):
+    mock_warning = mocker.patch.object(install_log, "warning")
+    input_config = {
+        "bitbucket_server": {
+            "url": "https://bitbucket.example.com",
+            "client_id": "consumer-key",
+            "auth_method": "oauth1_rsa",
+            "pemfile": {
+                "source_type": "filepath",
+                "value": "/secrets/bitbucket-server/private.pem",
+            },
+            "private_key": (
+                "-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+            ),
+        }
+    }
+
+    assert validate_install_configuration(input_config) == input_config
+    assert mock_warning.call_count == 0
+
+
 def test_validate_install_configuration_invalid(mocker):
     install_log.setLevel("DEBUG")
     mock_debug = mocker.patch.object(install_log, "debug")

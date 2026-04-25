@@ -57,3 +57,14 @@ USER 1001
 
 # "Output" image
 FROM ${BUILD_ENV}
+
+ARG IMAGE_SOURCE
+ARG IMAGE_REVISION
+ARG IMAGE_VERSION
+ARG IMAGE_TITLE
+
+LABEL org.opencontainers.image.source=$IMAGE_SOURCE
+LABEL org.opencontainers.image.revision=$IMAGE_REVISION
+LABEL org.opencontainers.image.version=$IMAGE_VERSION
+LABEL org.opencontainers.image.title=$IMAGE_TITLE
+LABEL org.opencontainers.image.vendor="Codecov"

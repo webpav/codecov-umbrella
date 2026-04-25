@@ -3,6 +3,17 @@ ARG REQUIREMENTS_IMAGE
 
 FROM $REQUIREMENTS_IMAGE as test_reqs
 
+ARG IMAGE_SOURCE
+ARG IMAGE_REVISION
+ARG IMAGE_VERSION
+ARG IMAGE_TITLE
+
+LABEL org.opencontainers.image.source=$IMAGE_SOURCE
+LABEL org.opencontainers.image.revision=$IMAGE_REVISION
+LABEL org.opencontainers.image.version=$IMAGE_VERSION
+LABEL org.opencontainers.image.title=$IMAGE_TITLE
+LABEL org.opencontainers.image.vendor="Codecov"
+
 ENV UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never \

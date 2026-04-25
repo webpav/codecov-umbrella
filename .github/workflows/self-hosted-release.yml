@@ -13,7 +13,7 @@ permissions:
 jobs:
   create-release:
     name: Tag Release ${{ github.head_ref }} and Push Docker image to Docker Hub
-    if: ${{ github.event.pull_request.merged == true && startsWith(github.head_ref, 'release/') && github.repository_owner == 'codecov' }}
+    if: ${{ github.event.pull_request.merged == true && startsWith(github.head_ref, 'release/') && github.repository_owner == (vars.SELF_HOSTED_RELEASE_OWNER || 'codecov') }}
     uses: ./.github/workflows/_create-release.yml
     with:
       tag_to_prepend: self-hosted-
@@ -21,22 +21,22 @@ jobs:
 
   push-worker-image:
     needs: [create-release]
-    if: ${{ github.event.pull_request.merged == true && startsWith(github.head_ref, 'release/') && github.repository_owner == 'codecov' }}
+    if: ${{ github.event.pull_request.merged == true && startsWith(github.head_ref, 'release/') && github.repository_owner == (vars.SELF_HOSTED_RELEASE_OWNER || 'codecov') }}
     uses: ./.github/workflows/_self-hosted.yml
     secrets: inherit
     with:
       push_release: true
-      repo: ${{ vars.CODECOV_WORKER_IMAGE_V2 || vars.CODECOV_WORKER_IMAGE_V2_SELF_HOSTED || 'codecov/self-hosted-worker' }}
+      repo: ${{ vars.DOCKERHUB_SELF_HOSTED_WORKER_IMAGE || vars.CODECOV_WORKER_IMAGE_V2 || vars.CODECOV_WORKER_IMAGE_V2_SELF_HOSTED || 'codecov/self-hosted-worker' }}
       output_directory: apps/worker
       make_target_prefix: worker.
 
   push-api-image:
     needs: [create-release]
-    if: ${{ github.event.pull_request.merged == true && startsWith(github.head_ref, 'release/') && github.repository_owner == 'codecov' }}
+    if: ${{ github.event.pull_request.merged == true && startsWith(github.head_ref, 'release/') && github.repository_owner == (vars.SELF_HOSTED_RELEASE_OWNER || 'codecov') }}
     uses: ./.github/workflows/_self-hosted.yml
     secrets: inherit
     with:
       push_release: true
-      repo: ${{ vars.CODECOV_API_IMAGE_V2 || vars.CODECOV_API_IMAGE_V2_SELF_HOSTED || 'codecov/self-hosted-api' }}
+      repo: ${{ vars.DOCKERHUB_SELF_HOSTED_API_IMAGE || vars.CODECOV_API_IMAGE_V2 || vars.CODECOV_API_IMAGE_V2_SELF_HOSTED || 'codecov/self-hosted-api' }}
       output_directory: apps/codecov-api
       make_target_prefix: api.

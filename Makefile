@@ -43,6 +43,9 @@ export VERSION ?= release-${sha}
 
 export build_date ?= $(shell git show -s --date=iso8601-strict --pretty=format:%cd $$sha)
 export branch := $(shell git branch | grep \* | cut -f2 -d' ')
+export IMAGE_SOURCE ?= $(if ${GITHUB_REPOSITORY},https://github.com/${GITHUB_REPOSITORY},https://github.com/codecov/umbrella)
+export IMAGE_REVISION ?= ${full_sha}
+export IMAGE_VERSION ?= ${VERSION}
 
 # This can be overridden with an environment variable to pull from a GCR registry.
 export AR_REPO_PREFIX ?= codecov
@@ -58,6 +61,7 @@ $(1): export AR_REPO ?= ${AR_REPO_PREFIX}/api
 $(1): export DOCKERHUB_REPO ?= codecov/self-hosted-api
 $(1): export ENTRYPOINT ?= ./api.sh
 $(1): export DJANGO_SETTINGS_PARENT ?= codecov
+$(1): export IMAGE_TITLE ?= codecov-api
 endef
 
 # Any API target starting with `proxy` should be forwarded to
@@ -89,6 +93,7 @@ $(1): export AR_REPO ?= ${AR_REPO_PREFIX}/worker
 $(1): export DOCKERHUB_REPO ?= codecov/self-hosted-worker
 $(1): export ENTRYPOINT ?= ./worker.sh
 $(1): export DJANGO_SETTINGS_PARENT ?= django_scaffold
+$(1): export IMAGE_TITLE ?= codecov-worker
 endef
 
 # Any Worker target starting with `shell` should be forwarded to
@@ -115,6 +120,7 @@ $(1): export DOCKERHUB_REPO ?= codecov/dev-hosted-shared
 $(1): export COV_SOURCE := ./shared
 $(1): export ENTRYPOINT ?= /bin/sh # Dummy value
 $(1): export DJANGO_SETTINGS_PARENT ?= shared.django_apps
+$(1): export IMAGE_TITLE ?= codecov-shared
 endef
 
 # All other Shared targets are implemented as generic targets above. Declare the

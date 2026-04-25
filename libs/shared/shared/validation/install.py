@@ -88,6 +88,23 @@ default_service_fields = {
     },
 }
 
+bitbucket_server_service_fields = {
+    **default_service_fields,
+    # OAuth 1.0a signature mode for Bitbucket Server/Data Center application links.
+    # Use `oauth1_rsa` for RSA-SHA1 application links, or `oauth1_hmac` for legacy
+    # HMAC-style signing.
+    "auth_method": {
+        "type": "string",
+        "allowed": ("oauth1_rsa", "oauth1_hmac"),
+    },
+    # Path or source descriptor for the RSA private key used to sign OAuth1 requests.
+    # Supports the same file loading formats as other PEM config values.
+    "pemfile": {"type": ["string", "dict"]},
+    # Inline RSA private key content for deployments that mount secrets directly
+    # into the install configuration.
+    "private_key": {"type": "string"},
+}
+
 enterprise_queue_fields = {
     "type": "dict",
     "schema": {
@@ -381,7 +398,7 @@ config_schema = {
         },
     },
     "bitbucket": {"type": "dict", "schema": {**default_service_fields}},
-    "bitbucket_server": {"type": "dict", "schema": {**default_service_fields}},
+    "bitbucket_server": {"type": "dict", "schema": bitbucket_server_service_fields},
     "github_enterprise": {"type": "dict", "schema": {**default_service_fields}},
     "gitlab": {"type": "dict", "schema": {**default_service_fields}},
     "gitlab_enterprise": {"type": "dict", "schema": {**default_service_fields}},
